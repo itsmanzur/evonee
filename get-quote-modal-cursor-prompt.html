@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<title>Get Quote Modal - Cursor Prompt</title>
+<style>
+  :root{
+    --purple:#6d28d9;
+    --purple-dark:#4c1d95;
+    --bg:#f7f6fb;
+    --card:#ffffff;
+    --border:#e5e0f5;
+    --text:#1e1b2e;
+    --muted:#6b6479;
+    --code-bg:#1e1b2e;
+    --code-text:#e8e6f0;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family:'Segoe UI', system-ui, -apple-system, sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    margin:0;
+    padding:32px 16px;
+    line-height:1.6;
+  }
+  .wrap{max-width:920px;margin:0 auto;}
+  h1{font-size:26px;margin-bottom:4px;color:var(--purple-dark);}
+  .subtitle{color:var(--muted);margin-bottom:28px;font-size:14px;}
+  .card{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:12px;
+    margin-bottom:20px;
+    overflow:hidden;
+    box-shadow:0 1px 3px rgba(109,40,217,0.06);
+  }
+  .card-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:14px 18px;
+    background:linear-gradient(135deg,#f3f0fc,#faf9fd);
+    border-bottom:1px solid var(--border);
+  }
+  .card-header h2{font-size:15px;margin:0;color:var(--purple-dark);}
+  .badge{
+    font-size:11px;
+    background:var(--purple);
+    color:#fff;
+    padding:3px 10px;
+    border-radius:20px;
+    font-weight:600;
+  }
+  pre{
+    margin:0;
+    padding:18px;
+    background:var(--code-bg);
+    color:var(--code-text);
+    overflow-x:auto;
+    font-size:12.5px;
+    white-space:pre-wrap;
+    word-break:break-word;
+    font-family:'Consolas','Monaco',monospace;
+  }
+  .copy-btn{
+    background:var(--purple);
+    color:#fff;
+    border:none;
+    padding:6px 14px;
+    border-radius:6px;
+    font-size:12px;
+    cursor:pointer;
+    font-weight:600;
+    transition:background .15s;
+  }
+  .copy-btn:hover{background:var(--purple-dark);}
+  .copy-btn.copied{background:#16a34a;}
+  .note{
+    font-size:13px;
+    color:var(--muted);
+    padding:12px 18px;
+    background:#fffbea;
+    border-top:1px solid #f5e9b8;
+  }
+  .toc{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-bottom:24px;
+  }
+  .toc a{
+    font-size:12.5px;
+    background:#fff;
+    border:1px solid var(--border);
+    padding:6px 12px;
+    border-radius:20px;
+    text-decoration:none;
+    color:var(--purple-dark);
+    font-weight:600;
+  }
+  .toc a:hover{background:var(--purple);color:#fff;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🧩 Get Quote Modal System — Cursor Prompts</h1>
+  <div class="subtitle">Evonee.com | Custom AJAX Quote Popup | Copy করে Cursor Composer-এ পেস্ট করো, একটা একটা করে চালাও</div>
+
+  <div class="toc">
+    <a href="#global">1. Global Context</a>
+    <a href="#modal">2. Modal Markup</a>
+    <a href="#trigger">3. Trigger + Prefill JS</a>
+    <a href="#ajax">4. AJAX Handler (PHP)</a>
+    <a href="#validate">5. File Upload Validation</a>
+    <a href="#email">6. Email Notification</a>
+    <a href="#spam">7. Spam Protection</a>
+  </div>
+
+  <!-- GLOBAL CONTEXT -->
+  <div class="card" id="global">
+    <div class="card-header">
+      <h2>1. Global Context Block (প্রতিটা প্রম্পটের আগে এটা বসাও)</h2>
+      <span class="badge">REQUIRED PREFIX</span>
+    </div>
+    <pre id="p1">GLOBAL CONTEXT — Evonee Get Quote Modal System
+
+Project: Evonee.com (WordPress site, promotional products company)
+Feature: Site-wide "Get Quote" popup modal, triggered from product cards
+and header CTA. Multi-step form matching provided design (6 sections:
+Contact Info, Product Info, Product Details, Artwork Upload, Delivery
+Info, Additional Info).
+
+TECH STACK CONSTRAINTS:
+- Plain WordPress (PHP 8+), no page builder dependency
+- Custom PHP, OOP where reasonable, PSR-4 style file separation
+  (no dumping logic into functions.php — use inc/ directory)
+- Vanilla JavaScript only — NO jQuery dependency, NO React
+- AJAX via WordPress admin-ajax.php (action hooks), nonce-verified
+- CSS: plain CSS, use CSS variables for colors so theme can restyle
+- File uploads handled via wp_handle_upload(), NOT raw $_FILES writes
+- Emails via wp_mail()
+
+SECURITY RULES (NON-NEGOTIABLE):
+- Every AJAX handler MUST verify a nonce (check_ajax_referer)
+- Sanitize every input: sanitize_text_field, sanitize_email,
+  sanitize_textarea_field as appropriate
+- File uploads: validate real MIME type (not just extension) using
+  wp_check_filetype_and_ext(), enforce 20MB max, allow only
+  ai, pdf, eps, svg, png, jpg
+- Escape all output with esc_html(), esc_attr(), esc_url()
+- No raw SQL — use $wpdb->prepare() if any custom queries are needed
+- Honeypot field required on the form for spam protection
+
+FILE STRUCTURE TO USE:
+inc/class-quote-modal.php     -> renders modal HTML (via shortcode or hook)
+inc/class-quote-ajax.php      -> handles wp_ajax_ + wp_ajax_nopriv_ submit
+inc/class-quote-mailer.php    -> builds + sends notification email
+assets/js/quote-modal.js      -> open/close modal, prefill, step logic, AJAX submit
+assets/css/quote-modal.css    -> modal styling
+
+Do not use any third-party form plugin (no CF7, no Gravity Forms,
+no WPForms). This must be fully custom, dependency-free.
+
+Now, here is the specific task:
+---</pre>
+    <div class="note">⚠️ প্রতিটা নিচের প্রম্পটের উপরে এই ব্লকটা কপি-পেস্ট করবে, তারপর নিচের নির্দিষ্ট টাস্কটা জুড়ে দিবে।</div>
+  </div>
+
+  <!-- MODAL MARKUP -->
+  <div class="card" id="modal">
+    <div class="card-header">
+      <h2>2. Modal HTML + CSS তৈরি</h2>
+    </div>
+    <pre id="p2">TASK: Build the Get Quote modal markup + styling.
+
+Create inc/class-quote-modal.php with a class Evonee_Quote_Modal that:
+- Has a static method render() that outputs the modal HTML, hidden by
+  default (class "eq-modal" with display:none, toggled via JS class
+  "eq-modal--active")
+- Hook render() into wp_footer so it renders once site-wide
+- The modal must contain a form with id="eq-quote-form" and these
+  sections, matching this exact structure (based on provided design):
+
+  Section 1 - Contact Information:
+    full_name (text, required), company (text, optional),
+    email (email, required), phone (tel, required, with country
+    code select defaulting to +880 Bangladesh), country (select,
+    required)
+
+  Section 2 - Product Information:
+    product (text, required, READONLY — populated by JS from the
+    trigger button, name="product"),
+    quantity (select: 50, 100, 250, 500, 1000, 2500, 5000+, Other),
+    other_quantity (number, shown only if "Other" selected)
+
+  Section 3 - Product Details:
+    wristband_type (select, required) — NOTE: make this section's
+    field labels dynamic-ready via data attributes since different
+    products will need different detail fields later; for now hardcode
+    wristband fields: type, size, color, has_pms_color (radio: yes/no/not sure),
+    debossed_text (text), text_color (text)
+
+  Section 4 - Artwork Upload:
+    file input id="eq-artwork" accept=".ai,.pdf,.eps,.svg,.png,.jpg,.jpeg"
+    with drag-and-drop zone styled per design, max 20MB shown as helper text,
+    checkbox "I don't have print-ready artwork, please help me with the design"
+
+  Section 5 - Delivery Information:
+    timeframe (select, required), specific_date (date, optional),
+    zip_code (text, required)
+
+  Section 6 - Additional Information:
+    project_notes (textarea, optional),
+    consent checkbox (required) - "I agree that Evonee may contact me
+    regarding this quote."
+
+  Also include:
+    - A "Selected Product" preview box at the top of the modal
+      (image + name + short description) populated via JS,
+      matching the right sidebar preview shown in the design image
+    - A hidden honeypot field name="eq_website" (leave empty, hide via CSS,
+      not aria-hidden — real users won't see or fill it)
+    - A hidden nonce field via wp_nonce_field('eq_submit_quote', 'eq_nonce')
+    - Submit button "Get Free Quote", disabled state while submitting
+    - Close button (X) top right, closes on overlay click and Escape key
+
+Create assets/css/quote-modal.css:
+- Overlay + centered modal card, max-width 720px, scrollable on mobile
+- Purple accent color using CSS variable --eq-accent: #6d28d9 (override-able)
+- Section headers with numbered purple circle badges (1-6) matching
+  the provided design screenshot
+- Responsive: full-screen modal on viewports under 640px
+- Drag-and-drop upload zone with dashed border, hover state
+
+Enqueue this CSS only when needed (footer render, not globally blocking).</pre>
+  </div>
+
+  <!-- TRIGGER + PREFILL -->
+  <div class="card" id="trigger">
+    <div class="card-header">
+      <h2>3. Trigger Buttons + Product Prefill JS</h2>
+    </div>
+    <pre id="p3">TASK: Wire up trigger buttons and dynamic product prefill.
+
+Update inc/class-quote-modal.php to add a helper method
+quote_button( $product_name, $product_image = '', $atts = [] ) that
+outputs a button/link like:
+
+  &lt;button type="button" class="eq-trigger" 
+    data-product="Wristband" 
+    data-image="https://.../wristband.jpg"
+    data-description="High-quality custom silicone wristbands..."&gt;
+    Get Quote
+  &lt;/button&gt;
+
+Use this helper inside the product loop template (product cards on
+homepage/shop page) and on the header "Get Free Quote" button (header
+version has no specific product — data-product should be empty string,
+and the modal should show a generic state / let user type product
+manually if the field is empty, i.e. field becomes NOT readonly when
+opened from header).
+
+Create assets/js/quote-modal.js (vanilla JS, no jQuery):
+- On DOMContentLoaded, attach click listener to all .eq-trigger buttons
+- On click:
+  1. Read data-product, data-image, data-description from the button
+  2. Open modal (add .eq-modal--active to #eq-quote-modal, prevent
+     body scroll)
+  3. Populate the "Selected Product" preview box (image src, name text,
+     description text)
+  4. Set the hidden/readonly product input's value = data-product
+  5. If data-product is empty (header trigger), make the product field
+     editable and focus it
+- Close modal on: (a) click on .eq-modal-close, (b) click on overlay
+  background (not the card itself), (c) Escape keydown
+- Handle the "Other Quantity" field: show it only when quantity select
+  value === "other", hide + clear otherwise
+- Handle "I don't have print-ready artwork" checkbox: when checked,
+  visually de-emphasize (not disable) the artwork upload zone and show
+  a small note "No problem — our design team will help."
+- Basic client-side validation before allowing submit: required fields
+  must be non-empty, email format check, file size check for artwork
+  (max 20MB) with inline error message under the relevant field —
+  do NOT use alert()
+- On valid submit: prevent default, show button loading state ("Sending..."),
+  build FormData (including the file), POST via fetch() to
+  the ajaxurl endpoint with action=eq_submit_quote, handle JSON response:
+    - success: replace form content with a success message + auto-close
+      after 4 seconds
+    - error: show returned error message in a dismissible banner at
+      top of modal, re-enable submit button
+
+Enqueue this JS with wp_enqueue_script, localize ajaxurl + nonce via
+wp_localize_script (object name: eqQuoteData with keys ajaxUrl, nonce).</pre>
+  </div>
+
+  <!-- AJAX HANDLER -->
+  <div class="card" id="ajax">
+    <div class="card-header">
+      <h2>4. AJAX Submit Handler (PHP)</h2>
+    </div>
+    <pre id="p4">TASK: Build the server-side AJAX handler for quote submission.
+
+Create inc/class-quote-ajax.php with class Evonee_Quote_Ajax:
+
+Constructor hooks:
+  add_action('wp_ajax_eq_submit_quote', [$this, 'handle_submit']);
+  add_action('wp_ajax_nopriv_eq_submit_quote', [$this, 'handle_submit']);
+
+handle_submit() method must, in order:
+  1. check_ajax_referer('eq_submit_quote', 'eq_nonce') — die with JSON
+     error if it fails
+  2. Honeypot check: if $_POST['eq_website'] is non-empty, silently
+     return a FAKE success JSON response (do not reveal spam detection
+     to the bot) and stop processing
+  3. Sanitize all text fields with sanitize_text_field(), email with
+     sanitize_email() + is_email() validation, textarea with
+     sanitize_textarea_field()
+  4. Validate required fields server-side (full_name, email, phone,
+     country, product, timeframe, zip_code, consent). Return
+     wp_send_json_error() with a field-keyed errors object if anything
+     is missing/invalid, e.g.:
+       { "errors": { "email": "Please enter a valid email address" } }
+  5. If a file was uploaded (eq_artwork), delegate to a separate
+     validate_and_upload_artwork() method (see task 5 below) — bail
+     with wp_send_json_error() if validation fails
+  6. Build a structured $submission array from all fields
+  7. Insert into a custom DB table `wp_eq_quote_submissions` (create
+     an activation hook that runs dbDelta() to create this table with
+     columns: id, full_name, company, email, phone, country, product,
+     quantity, product_details (JSON), artwork_url, timeframe,
+     specific_date, zip_code, project_notes, created_at) — write the
+     dbDelta schema and the activation hook registration too
+  8. Call Evonee_Quote_Mailer::send_notification($submission) (task 6)
+  9. wp_send_json_success(['message' => 'Quote request received! We will
+     get back to you within 24 hours.'])
+
+Wrap DB insert and mail send in try/catch so a mail failure doesn't
+block the success response to the user (log mail errors via error_log,
+still return success if DB insert succeeded).</pre>
+  </div>
+
+  <!-- FILE VALIDATION -->
+  <div class="card" id="validate">
+    <div class="card-header">
+      <h2>5. Artwork File Upload Validation</h2>
+    </div>
+    <pre id="p5">TASK: Secure artwork file upload handling.
+
+Add method validate_and_upload_artwork() to Evonee_Quote_Ajax
+(inc/class-quote-ajax.php):
+
+- Return early (no error) if no file was sent — artwork is optional
+  when the "I don't have print-ready artwork" checkbox is checked
+- Require 'wp-admin/includes/file.php', 'wp-admin/includes/image.php'
+- Allowed extensions: ai, pdf, eps, svg, png, jpg, jpeg
+- Allowed real MIME types map:
+    pdf -> application/pdf
+    png -> image/png
+    jpg/jpeg -> image/jpeg
+    svg -> image/svg+xml
+    ai -> application/postscript OR application/pdf (AI files often
+          report as one of these — allow both)
+    eps -> application/postscript
+- Use wp_check_filetype_and_ext() against the allowed list; reject with
+  a clear error message if mismatch (protects against renamed .php
+  files disguised with an image extension)
+- Enforce max size 20MB (20 * 1024 * 1024 bytes), check
+  $_FILES['eq_artwork']['size'] before calling wp_handle_upload
+- Use wp_handle_upload() with 'test_form' => false and an 'action'
+  matching eq_submit_quote, upload into a dedicated subdirectory
+  uploads/evonee-quotes/{Y}/{m}/ (use the 'upload_dir' filter
+  temporarily during this call, then remove the filter after)
+- On success, return the uploaded file URL (esc_url_raw) to be stored
+  in the submission
+- On any failure, return WP_Error with a user-friendly message
+  ("File type not allowed", "File exceeds 20MB limit", etc.) —
+  the calling method should surface this via wp_send_json_error()
+- Additionally: SVGs can contain embedded scripts. After upload, run a
+  simple sanitization pass on .svg files — strip &lt;script&gt; tags and
+  on* event attributes from the file content before saving (use a
+  regex-based strip, note in a comment that for production-grade SVG
+  sanitization a library like enshrined/svg-sanitize is recommended,
+  but keep this dependency-free for now).</pre>
+  </div>
+
+  <!-- EMAIL -->
+  <div class="card" id="email">
+    <div class="card-header">
+      <h2>6. Email Notification</h2>
+    </div>
+    <pre id="p6">TASK: Build the notification email sender.
+
+Create inc/class-quote-mailer.php with class Evonee_Quote_Mailer:
+
+Static method send_notification( array $submission ):
+  - Sends to the site admin email (get_option('admin_email')) AND to
+    a filterable constant EQ_SALES_EMAIL (define as 'sales@evonee.com'
+    but wrap in apply_filters('eq_notification_recipient', ...) so it's
+    configurable without code edits)
+  - Subject: "New Quote Request — {product} from {full_name}"
+  - Body: plain, well-formatted HTML email (use a simple inline-styled
+    HTML table, no external CSS since email clients strip it) listing
+    every submitted field clearly labeled, plus a link to the uploaded
+    artwork file if present, plus submission timestamp
+  - Set Content-Type header to text/html via the wp_mail 'headers' param
+  - Also trigger a short auto-reply confirmation email to the customer's
+    own email address: "We've received your quote request — our team
+    will respond within 24 hours with a custom quote and digital proof."
+    Keep this one short and on-brand (reference Evonee).
+  - Both sends wrapped so a failure in one doesn't prevent the other
+  - Return true/false indicating overall success for logging purposes</pre>
+  </div>
+
+  <!-- SPAM -->
+  <div class="card" id="spam">
+    <div class="card-header">
+      <h2>7. Spam Protection (Extra Hardening)</h2>
+    </div>
+    <pre id="p7">TASK: Add lightweight rate-limiting on top of the honeypot.
+
+In inc/class-quote-ajax.php, before processing a submission:
+  - Use a transient keyed by the visitor's IP address
+    (Evonee_Quote_Ajax::get_client_ip() — check
+    HTTP_CF_CONNECTING_IP / HTTP_X_FORWARDED_FOR / REMOTE_ADDR in that
+    order, sanitize with filter_var FILTER_VALIDATE_IP)
+  - Limit to 5 submissions per IP per 15 minutes
+    (set_transient('eq_rate_' . md5($ip), $count, 15 * MINUTE_IN_SECONDS))
+  - If limit exceeded, wp_send_json_error(['message' =>
+    'Too many requests. Please try again later.']) with a 429-style
+    response (still valid AJAX JSON, WordPress AJAX doesn't need a
+    real HTTP 429 but set the message clearly)
+  - This check should run AFTER the honeypot check but BEFORE any
+    sanitization/DB work, to keep it cheap
+
+Also add a minimum time-on-page check:
+  - In quote-modal.js, record Date.now() when the modal is opened,
+    store it in a hidden input eq_open_time (timestamp)
+  - Server-side, reject submissions where (current_time - eq_open_time)
+    is less than 3 seconds — bots often submit instantly
+  - Return the same generic rate-limit-style message to avoid revealing
+    the specific check to bots</pre>
+  </div>
+
+  <div class="note" style="border-radius:10px;border:1px solid #f5e9b8;">
+    💡 <strong>ব্যবহারের ধারা:</strong> ১ নম্বর (Global Context) কপি করে প্রতিটা টাস্কের (২-৭) উপরে পেস্ট করে Cursor Composer-এ একটার পর একটা রান করো। প্রতিটা ফাইল আলাদা কমিটে (git) রাখলে রিভিউ করা সহজ হবে।
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.card').forEach(card => {
+  const header = card.querySelector('.card-header');
+  const pre = card.querySelector('pre');
+  if(!header || !pre) return;
+  const btn = document.createElement('button');
+  btn.className = 'copy-btn';
+  btn.textContent = 'Copy';
+  btn.onclick = () => {
+    navigator.clipboard.writeText(pre.textContent).then(() => {
+      btn.textContent = 'Copied ✓';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+    });
+  };
+  header.appendChild(btn);
+});
+</script>
+</body>
+</html>

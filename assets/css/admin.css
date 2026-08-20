@@ -1,0 +1,611 @@
+/* Evonee Admin CSS */
+
+.evonee-admin-wrap {
+    margin: 20px 20px 0 0;
+    font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+}
+
+.evonee-docs-header {
+    background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 100%);
+    color: #ffffff;
+    padding: 24px 30px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 14px rgba(109, 40, 217, 0.2);
+}
+
+.evonee-docs-header h1 {
+    color: #ffffff;
+    font-size: 22px;
+    font-weight: 800;
+    margin: 0 0 4px;
+    padding: 0;
+}
+
+.evonee-docs-header .subtitle {
+    margin: 0;
+    font-size: 13.5px;
+    color: #ddd6fe;
+}
+
+.evonee-docs-brand span {
+    background: rgba(255, 255, 255, 0.15);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+}
+
+.evonee-docs-grid {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 24px;
+}
+
+.evonee-doc-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.evonee-card-header {
+    background: #faf5ff;
+    border-bottom: 1px solid #f3e8ff;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.evonee-card-header span {
+    color: #6d28d9;
+    font-size: 20px;
+}
+
+.evonee-card-header h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: #4c1d95;
+}
+
+.evonee-card-body {
+    padding: 20px;
+    color: #334155;
+    line-height: 1.6;
+    font-size: 13.5px;
+}
+
+.evonee-card-body h3 {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 18px 0 8px;
+}
+
+.evonee-feature-box {
+    background: #f8fafc;
+    border-left: 4px solid #6d28d9;
+    padding: 12px 18px;
+    border-radius: 4px;
+    margin-top: 14px;
+}
+
+.evonee-feature-box ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.evonee-code-snippet {
+    background: #0f172a;
+    color: #38bdf8;
+    padding: 12px 16px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 13px;
+    margin-bottom: 14px;
+}
+
+.evonee-code-snippet code {
+    background: none;
+    color: #38bdf8;
+    padding: 0;
+}
+
+.evonee-copy-code {
+    background: #6d28d9;
+    color: #ffffff;
+    border: none;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.evonee-copy-code:hover {
+    background: #4c1d95;
+}
+
+.evonee-docs-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 20px;
+    font-size: 12.5px;
+}
+
+.evonee-docs-table th {
+    background: #f1f5f9;
+    color: #0f172a;
+    text-align: left;
+    padding: 8px 12px;
+    font-weight: 700;
+    border: 1px solid #e2e8f0;
+}
+
+.evonee-docs-table td {
+    padding: 8px 12px;
+    border: 1px solid #e2e8f0;
+}
+
+.evonee-pre-block {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 14px 16px;
+    border-radius: 8px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    overflow-x: auto;
+}
+
+.evonee-docs-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.evonee-sidebar-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 16px 18px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.evonee-sidebar-card h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.evonee-sidebar-card p {
+    font-size: 12.5px;
+    margin: 0 0 8px;
+    color: #64748b;
+}
+
+.evonee-sidebar-card ul {
+    margin: 0 0 8px;
+    padding-left: 18px;
+    font-size: 12px;
+}
+
+.evonee-admin-card {
+    background: #ffffff;
+    border: 1px solid #c3c4c7;
+    border-radius: 8px;
+    padding: 10px;
+    margin-top: 16px;
+}
+
+.evonee-badge-product {
+    background: #f3f0fc;
+    color: #6d28d9;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 11px;
+}
+
+.evonee-empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #64748b;
+}
+
+/* Admin Submissions Suite Styling */
+.evonee-admin-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.evonee-admin-header h1 {
+    font-size: 22px;
+    font-weight: 800;
+    margin: 0 0 4px;
+    padding: 0;
+}
+
+.evonee-admin-header .subtitle {
+    margin: 0;
+    font-size: 13px;
+    color: #64748b;
+}
+
+.evonee-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.evonee-filter-bar {
+    background: #ffffff;
+    border: 1px solid #c3c4c7;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+}
+
+.evonee-filter-group {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.evonee-search-input {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.evonee-search-input input[type="search"] {
+    width: 260px;
+    height: 32px;
+}
+
+.evonee-bulk-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.evonee-count-tag {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 700;
+    color: #64748b;
+}
+
+.evonee-submissions-table {
+    margin-top: 0 !important;
+}
+
+.evonee-action-btns {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+/* Status Select Badges */
+.evonee-status-select {
+    padding: 3px 8px !important;
+    border-radius: 12px !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    border: 1px solid transparent !important;
+    cursor: pointer !important;
+    outline: none !important;
+}
+
+.evonee-status-new {
+    background: #dcfce7 !important;
+    color: #15803d !important;
+    border-color: #bbf7d0 !important;
+}
+
+.evonee-status-pending {
+    background: #fef9c3 !important;
+    color: #a16207 !important;
+    border-color: #fef08a !important;
+}
+
+.evonee-status-quoted {
+    background: #dbeafe !important;
+    color: #1d4ed8 !important;
+    border-color: #bfdbfe !important;
+}
+
+.evonee-status-approved {
+    background: #f3e8ff !important;
+    color: #6b21a8 !important;
+    border-color: #e9d5ff !important;
+}
+
+.evonee-status-completed {
+    background: #ccfbf1 !important;
+    color: #0f766e !important;
+    border-color: #99f6e4 !important;
+}
+
+.evonee-status-rejected {
+    background: #fee2e2 !important;
+    color: #b91c1c !important;
+    border-color: #fecaca !important;
+}
+
+/* Admin Detail & Reply Modals */
+.eq-admin-modal-wrap {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.eq-admin-modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(4px);
+}
+
+.eq-admin-modal-box {
+    position: relative;
+    z-index: 10;
+    background: #ffffff;
+    width: 100%;
+    max-width: 760px;
+    max-height: 90vh;
+    border-radius: 12px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.eq-admin-modal-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+}
+
+.eq-admin-modal-header h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.eq-admin-modal-close {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    background: none;
+    border: none;
+    font-size: 24px;
+    line-height: 1;
+    color: #64748b;
+    cursor: pointer;
+}
+
+.eq-admin-modal-close:hover {
+    color: #ef4444;
+}
+
+.eq-admin-modal-content {
+    padding: 20px;
+}
+
+.eq-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.eq-detail-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.eq-detail-card h3 {
+    margin: 0 0 12px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #4c1d95;
+    border-bottom: 1px solid #f1f5f9;
+    padding-bottom: 6px;
+}
+
+.eq-detail-card p {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: #334155;
+}
+
+/* Analytics Dashboard Styling */
+.evonee-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.evonee-stat-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.evonee-stat-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.evonee-stat-val {
+    font-size: 24px;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.1;
+}
+
+.evonee-stat-lbl {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 4px;
+}
+
+.evonee-analytics-two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.evonee-bar-row {
+    margin-bottom: 14px;
+}
+
+.evonee-bar-lbl {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12.5px;
+    margin-bottom: 5px;
+    color: #1e1b2e;
+}
+
+.evonee-bar-lbl span {
+    color: #64748b;
+}
+
+.evonee-bar-track {
+    width: 100%;
+    height: 8px;
+    background: #f1f5f9;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.evonee-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #6d28d9 0%, #8b5cf6 100%);
+    border-radius: 4px;
+    transition: width 0.4s ease;
+}
+
+/* Settings Toggle Switches */
+.evonee-setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 0;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.evonee-setting-row:last-child {
+    border-bottom: none;
+}
+
+.evonee-setting-info strong {
+    font-size: 14px;
+    color: #0f172a;
+    display: block;
+    margin-bottom: 2px;
+}
+
+.evonee-setting-info p {
+    margin: 0;
+    font-size: 12.5px;
+    color: #64748b;
+}
+
+.evonee-toggle {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 26px;
+    flex-shrink: 0;
+}
+
+.evonee-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.evonee-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #cbd5e1;
+    transition: .3s;
+    border-radius: 26px;
+}
+
+.evonee-slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .3s;
+    border-radius: 50%;
+}
+
+.evonee-toggle input:checked + .evonee-slider {
+    background-color: #6d28d9;
+}
+
+.evonee-toggle input:checked + .evonee-slider:before {
+    transform: translateX(22px);
+}
