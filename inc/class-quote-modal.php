@@ -34,7 +34,7 @@ class Evonee_Quote_Modal {
         if (!empty($settings['enable_wc_quote_only']) && $settings['enable_wc_quote_only'] === '1') {
             remove_action('woocommerce_after_shop_loop_item', 'woocommerce_template_loop_add_to_cart', 10);
             remove_action('woocommerce_single_product_summary', 'woocommerce_template_single_add_to_cart', 30);
-            add_action('woocommerce_single_product_summary', [$instance ?? $this, 'render_wc_single_quote_btn'], 30);
+            add_action('woocommerce_single_product_summary', [$this, 'render_wc_single_quote_btn'], 30);
         }
     }
 
@@ -44,7 +44,7 @@ class Evonee_Quote_Modal {
         $image_id  = $product->get_image_id();
         $image_url = $image_id ? wp_get_attachment_image_url($image_id, 'large') : '';
         $desc      = wp_strip_all_tags($product->get_short_description() ?: $product->get_description());
-        echo wp_kses_post(self::quote_button($product->get_name(), $image_url, $desc, 'Request Custom Quote', 'eq-btn-primary button-large'));
+        echo self::kses_button(self::quote_button($product->get_name(), $image_url, $desc, 'Request Custom Quote', 'eq-btn-primary button-large'));
     }
 
     /**
@@ -63,7 +63,7 @@ class Evonee_Quote_Modal {
         $image_url = $image_id ? wp_get_attachment_image_url($image_id, 'medium') : '';
         $desc      = wp_strip_all_tags($product->get_short_description() ?: $product->get_description());
 
-        echo wp_kses_post(self::quote_button($product->get_name(), $image_url, $desc, 'Get Quote', 'eq-btn-wc-loop'));
+        echo self::kses_button(self::quote_button($product->get_name(), $image_url, $desc, 'Get Quote', 'eq-btn-wc-loop'));
     }
 
     /**
@@ -71,12 +71,14 @@ class Evonee_Quote_Modal {
      * 1. Fetches real WooCommerce products if WooCommerce is installed
      * 2. Otherwise returns filterable default list with safe fallback SVG images
      */
-    public static function get_products() {
+    public static function get_products($limit = -1) {
+        $query_limit = ($limit > 0) ? $limit : -1;
+
         // Fetch from WooCommerce if active
         if (class_exists('WooCommerce')) {
             $wc_products = wc_get_products([
                 'status' => 'publish',
-                'limit'  => 20,
+                'limit'  => $query_limit,
             ]);
             if (!empty($wc_products)) {
                 $list = [];
@@ -143,7 +145,8 @@ class Evonee_Quote_Modal {
         wp_localize_script('evonee-modal-js', 'eqQuoteData', [
             'ajaxUrl'          => admin_url('admin-ajax.php'),
             'nonce'            => wp_create_nonce('eq_submit_quote'),
-            'recaptchaSiteKey' => $recaptcha_site_key
+            'recaptchaSiteKey' => $recaptcha_site_key,
+            'placeholder'      => self::get_svg_placeholder(),
         ]);
     }
 
@@ -167,6 +170,24 @@ class Evonee_Quote_Modal {
         );
     }
 
+    /**
+     * Allow data-* attributes on quote trigger buttons (wp_kses_post strips them).
+     */
+    public static function kses_button($html) {
+        return wp_kses($html, [
+            'button' => [
+                'type'              => true,
+                'class'             => true,
+                'data-product'      => true,
+                'data-image'        => true,
+                'data-description'  => true,
+            ],
+            'span' => [
+                'class' => true,
+            ],
+        ]);
+    }
+
     public function shortcode_quote_button($atts) {
         $atts = shortcode_atts([
             'product'     => '',
@@ -176,7 +197,7 @@ class Evonee_Quote_Modal {
             'class'       => 'eq-btn-primary'
         ], $atts);
 
-        return self::quote_button($atts['product'], $atts['image'], $atts['description'], $atts['text'], $atts['class']);
+        return self::kses_button(self::quote_button($atts['product'], $atts['image'], $atts['description'], $atts['text'], $atts['class']));
     }
 
     /**
@@ -211,10 +232,12 @@ class Evonee_Quote_Modal {
                         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
                         $today_cnt = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions WHERE DATE(created_at) = %s", current_time('Y-m-d')));
                         ?>
+                        <?php if ($today_cnt > 0): ?>
                         <div style="margin-top:6px; display:inline-flex; align-items:center; gap:6px; background:#faf5ff; border:1px solid #e9d5ff; padding:3px 10px; border-radius:20px; font-size:11.5px; color:#6d28d9; font-weight:700;">
                             <span style="display:inline-block; width:6px; height:6px; background:#16a34a; border-radius:50%;"></span>
-                            ⚡ <?php echo esc_html(($today_cnt > 0) ? $today_cnt : wp_rand(5, 15)); ?> quotes requested today!
+                            <?php echo esc_html($today_cnt); ?> quotes requested today!
                         </div>
+                        <?php endif; ?>
                     </div>
 
                     <div class="eq-header-badges">
@@ -261,7 +284,7 @@ class Evonee_Quote_Modal {
                             
                             <?php wp_nonce_field('eq_submit_quote', 'eq_nonce'); ?>
                             <!-- Honeypot -->
-                            <input type="text" name="eq_website" class="eq-honeypot" tabindex="-1" autocomplete="off">
+                            <input type="text" name="eq_website" class="eq-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">
                             <!-- Open Time -->
                             <input type="hidden" name="eq_open_time" id="eq-open-time" value="">
 
@@ -415,7 +438,7 @@ class Evonee_Quote_Modal {
                             </div>
 
                             <!-- SECTION 3: Product Details -->
-                            <div class="eq-section">
+                            <div class="eq-section" id="eq-wristband-details">
                                 <div class="eq-section-header">
                                     <span class="eq-step-num">3</span>
                                     <h3>Product Details</h3>
@@ -619,7 +642,7 @@ class Evonee_Quote_Modal {
                             <h4 class="eq-card-title">Selected Product</h4>
                             <div class="eq-product-preview">
                                 <div class="eq-product-img-wrap">
-                                    <img id="eq-preview-img" src="<?php echo esc_url(EVONEE_PLUGIN_URL . 'assets/images/wristband.png'); ?>" alt="Selected Product" onerror="this.src='https://placehold.co/120x80/6d28d9/ffffff?text=Product'">
+                                    <img id="eq-preview-img" src="<?php echo esc_attr(self::get_svg_placeholder()); ?>" alt="Selected Product">
                                 </div>
                                 <div class="eq-product-info">
                                     <h5 id="eq-preview-title">Silicone Wristband</h5>
@@ -707,7 +730,7 @@ class Evonee_Quote_Modal {
                             <ul class="eq-contact-list">
                                 <li>
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-                                    <a href="tel:+88001819898893">+880 01819 898893</a>
+                                    <a href="tel:+8801819898893">+880 1819-898893</a>
                                 </li>
                                 <li>
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
@@ -733,12 +756,10 @@ class Evonee_Quote_Modal {
                 </div>
 
             </div>
-
-            <!-- WhatsApp Floating Quick Contact Button (Module 8) -->
-            <a href="https://wa.me/88001819898893?text=Hi%20Evonee%20Team!%20I%20have%20a%20question%20about%20a%20custom%20quote." target="_blank" class="eq-whatsapp-float" style="position:fixed; bottom:25px; right:25px; z-index:99990; background:#25D366; color:#ffffff; width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 14px rgba(37,211,102,0.4); text-decoration:none; transition:transform 0.2s;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'" aria-label="Chat on WhatsApp">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
-            </a>
         </div>
+        <a href="https://wa.me/8801819898893?text=Hi%20Evonee%20Team!%20I%20have%20a%20question%20about%20a%20custom%20quote." target="_blank" class="eq-whatsapp-float" aria-label="Chat on WhatsApp">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
+        </a>
         <?php
     }
 
@@ -750,9 +771,11 @@ class Evonee_Quote_Modal {
      * Render Popular Products Grid with Customizable Columns & Responsive Controls
      */
     public function render_products_grid($atts = []) {
+        $settings = Evonee_Quote_Admin::get_settings();
+
         $atts = shortcode_atts([
-            'title'       => 'Popular Products',
-            'show_title'  => 'yes',
+            'title'       => '',
+            'show_title'  => '',
             'cols'        => 6,
             'columns'     => 6,
             'cols_tablet' => 3,
@@ -760,7 +783,7 @@ class Evonee_Quote_Modal {
             'gap'         => '18px',
             'img_height'  => '140px',
             'img_fit'     => 'cover',
-            'limit'       => -1,
+            'limit'       => '',
         ], $atts);
 
         // Allow 'columns' or 'cols'
@@ -771,13 +794,23 @@ class Evonee_Quote_Modal {
         $img_height   = esc_attr($atts['img_height']);
         $img_fit      = esc_attr($atts['img_fit']);
 
-        $products = self::get_products();
+        if ($atts['limit'] !== '' && $atts['limit'] !== null) {
+            $limit = intval($atts['limit']);
+        } else {
+            $limit = intval($settings['products_grid_limit'] ?? 12);
+        }
 
-        // Limit product count if specified
-        $limit = intval($atts['limit']);
+        $products = self::get_products($limit);
+
+        // Limit product count if specified (covers default product list)
         if ($limit > 0 && count($products) > $limit) {
             $products = array_slice($products, 0, $limit);
         }
+
+        $show_title = $atts['show_title'] !== ''
+            ? ($atts['show_title'] === 'yes' || $atts['show_title'] === '1')
+            : (!empty($settings['show_products_title']) && $settings['show_products_title'] === '1');
+        $title_text = !empty($atts['title']) ? $atts['title'] : 'Popular Products';
 
         $placeholder = self::get_svg_placeholder();
 
@@ -786,8 +819,8 @@ class Evonee_Quote_Modal {
         <div class="evonee-landing evonee-grid-only">
             <section class="el-products-section" style="padding: 20px 0;">
                 <div class="el-container">
-                    <?php if ($atts['show_title'] === 'yes' && !empty($atts['title'])): ?>
-                        <h2 class="el-section-title"><?php echo esc_html($atts['title']); ?></h2>
+                    <?php if ($show_title && !empty($title_text)): ?>
+                        <h2 class="el-section-title"><?php echo esc_html($title_text); ?></h2>
                         <div class="el-title-line"></div>
                     <?php endif; ?>
 
@@ -833,7 +866,7 @@ class Evonee_Quote_Modal {
             <div class="el-topbar">
                 <div class="el-container">
                     <div class="el-topbar-right">
-                        <span>📞 +880 01819 898893</span>
+                        <span>📞 +880 1819-898893</span>
                         <span>✉️ sales@evonee.com</span>
                     </div>
                 </div>
@@ -856,7 +889,7 @@ class Evonee_Quote_Modal {
                     </nav>
 
                     <div class="el-nav-cta">
-                        <?php echo wp_kses_post(self::quote_button('', '', '', 'Get Free Quote', 'el-btn-orange')); ?>
+                        <?php echo self::kses_button(self::quote_button('', '', '', 'Get Free Quote', 'el-btn-orange')); ?>
                     </div>
                 </div>
             </header>
@@ -890,7 +923,7 @@ class Evonee_Quote_Modal {
                         </div>
 
                         <div class="el-hero-cta-wrap">
-                            <?php echo wp_kses_post(self::quote_button('', '', '', 'Get Free Quote', 'el-btn-hero')); ?>
+                            <?php echo self::kses_button(self::quote_button('', '', '', 'Get Free Quote', 'el-btn-hero')); ?>
                             <span class="el-hero-subtext">Fast Response • Free Mockup • No Obligation</span>
                         </div>
                     </div>
@@ -914,7 +947,7 @@ class Evonee_Quote_Modal {
                             </div>
                         </div>
                         <div class="el-cb-action">
-                            <?php echo wp_kses_post(self::quote_button('', '', '', 'Get Free Quote', 'el-btn-dark')); ?>
+                            <?php echo self::kses_button(self::quote_button('', '', '', 'Get Free Quote', 'el-btn-dark')); ?>
                         </div>
                     </div>
                 </div>
@@ -998,7 +1031,7 @@ class Evonee_Quote_Modal {
 
                     <div class="el-footer-col">
                         <h4>Contact Us</h4>
-                        <p>📞 +880 01819 898893</p>
+                        <p>📞 +880 1819-898893</p>
                         <p>✉️ sales@evonee.com</p>
                         <p>📍 Dhaka, Bangladesh</p>
                     </div>

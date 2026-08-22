@@ -35,8 +35,9 @@ class Evonee_Quote_Mailer {
     private static function send_admin_notification(array $submission) {
         try {
             $admin_email = get_option('admin_email');
-            $sales_email = defined('EQ_SALES_EMAIL') ? EQ_SALES_EMAIL : 'sales@evonee.com';
-            $recipients  = apply_filters('evonee_notification_recipient', [$admin_email, $sales_email]);
+            $sales_email = Evonee_Quote_Ajax::get_sales_email();
+            $recipients  = array_values(array_unique(array_filter([$admin_email, $sales_email], 'is_email')));
+            $recipients  = apply_filters('evonee_notification_recipient', $recipients);
 
             $product_name = !empty($submission['product']) ? esc_html($submission['product']) : 'Custom Product';
             $full_name    = !empty($submission['full_name']) ? esc_html($submission['full_name']) : 'Customer';
@@ -48,9 +49,16 @@ class Evonee_Quote_Mailer {
                 'Reply-To: ' . esc_html($full_name) . ' <' . sanitize_email($submission['email']) . '>'
             ];
 
-            $artwork_html = !empty($submission['artwork_url'])
-                ? sprintf('<a href="%1$s" target="_blank" style="color: #6d28d9; font-weight: bold;">View / Download Artwork</a>', esc_url($submission['artwork_url']))
-                : '<em>No artwork attached (Design help requested)</em>';
+            $artwork_urls = Evonee_Quote_Ajax::parse_artwork_urls($submission['artwork_url'] ?? '');
+            if (!empty($artwork_urls)) {
+                $links = [];
+                foreach ($artwork_urls as $i => $url) {
+                    $links[] = sprintf('<a href="%1$s" target="_blank" style="color: #6d28d9; font-weight: bold;">Artwork %2$d</a>', esc_url($url), $i + 1);
+                }
+                $artwork_html = implode(' &nbsp;|&nbsp; ', $links);
+            } else {
+                $artwork_html = '<em>No artwork attached (Design help requested)</em>';
+            }
 
             $product_details = '';
             if (!empty($submission['product_details']) && is_array($submission['product_details'])) {
@@ -153,7 +161,7 @@ class Evonee_Quote_Mailer {
             $product   = !empty($submission['product']) ? esc_html($submission['product']) : 'custom products';
 
             $settings     = Evonee_Quote_Admin::get_settings();
-            $sales_email  = !empty($settings['sales_email']) ? sanitize_email($settings['sales_email']) : 'sales@evonee.com';
+            $sales_email  = Evonee_Quote_Ajax::get_sales_email();
             $brand_name   = !empty($settings['email_brand_name']) ? esc_html($settings['email_brand_name']) : 'Evonee';
             $header_color = !empty($settings['email_header_color']) ? esc_attr($settings['email_header_color']) : '#6d28d9';
             $footer_text  = !empty($settings['email_footer_text']) ? esc_html($settings['email_footer_text']) : 'Evonee Promotional Products • sales@evonee.com';

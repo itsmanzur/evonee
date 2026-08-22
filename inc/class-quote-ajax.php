@@ -5,6 +5,8 @@ if (!defined('ABSPATH')) {
 
 class Evonee_Quote_Ajax {
 
+    const DB_SCHEMA_VERSION = '2.1.0';
+
     public static function init() {
         $instance = new self();
         add_action('wp_ajax_eq_submit_quote',         [$instance, 'handle_submit']);
@@ -197,11 +199,15 @@ class Evonee_Quote_Ajax {
         $table = $wpdb->prefix . 'eq_email_log';
         self::maybe_run_phase2_migrations();
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
+        $emails = array_filter(array_map('sanitize_email', preg_split('/\s*,\s*/', (string) $recipient)));
+        $emails = array_values(array_filter($emails, 'is_email'));
+        $recipient_store = !empty($emails) ? implode(', ', $emails) : sanitize_text_field($recipient);
+
         $wpdb->insert(
             $table,
             [
                 'submission_id' => intval($submission_id),
-                'recipient'     => sanitize_email($recipient),
+                'recipient'     => $recipient_store,
                 'subject'       => sanitize_text_field($subject),
                 'type'          => sanitize_text_field($type),
                 'status'        => sanitize_text_field($status)
@@ -211,9 +217,85 @@ class Evonee_Quote_Ajax {
     }
 
     /**
+     * Sales notification address from settings, with constant fallback.
+     */
+    public static function get_sales_email() {
+        $settings = Evonee_Quote_Admin::get_settings();
+        if (!empty($settings['sales_email']) && is_email($settings['sales_email'])) {
+            return $settings['sales_email'];
+        }
+        return defined('EQ_SALES_EMAIL') ? EQ_SALES_EMAIL : 'sales@evonee.com';
+    }
+
+    /**
+     * Parse stored artwork field (JSON array or legacy comma-separated URLs).
+     *
+     * @param mixed $raw
+     * @return string[]
+     */
+    public static function parse_artwork_urls($raw) {
+        if (empty($raw)) {
+            return [];
+        }
+        if (is_array($raw)) {
+            return array_values(array_filter($raw, function ($url) {
+                return is_string($url) && $url !== '';
+            }));
+        }
+        $decoded = json_decode((string) $raw, true);
+        if (is_array($decoded)) {
+            return array_values(array_filter($decoded, function ($url) {
+                return is_string($url) && $url !== '';
+            }));
+        }
+        return array_values(array_filter(array_map('trim', preg_split('/\s*,\s*/', (string) $raw))));
+    }
+
+    /**
+     * Parse stored product_details JSON.
+     *
+     * @param mixed $raw
+     * @return array
+     */
+    public static function parse_product_details($raw) {
+        if (empty($raw)) {
+            return [];
+        }
+        if (is_array($raw)) {
+            return $raw;
+        }
+        $decoded = json_decode((string) $raw, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    /**
+     * Flatten product details for CSV / plain-text views.
+     *
+     * @param mixed $raw
+     * @return string
+     */
+    public static function format_product_details_text($raw) {
+        $details = self::parse_product_details($raw);
+        $parts   = [];
+        foreach ($details as $key => $val) {
+            if ($val === '' || $val === null || $val === []) {
+                continue;
+            }
+            $label = ucwords(str_replace('_', ' ', (string) $key));
+            $value = is_array($val) ? implode(', ', $val) : (string) $val;
+            $parts[] = $label . ': ' . $value;
+        }
+        return implode(' | ', $parts);
+    }
+
+    /**
      * Runtime migration: Phase 2 DB Columns & Tables
      */
     public static function maybe_run_phase2_migrations() {
+        if (get_option('evonee_db_schema_version') === self::DB_SCHEMA_VERSION) {
+            return;
+        }
+
         global $wpdb;
         $sub_table = $wpdb->prefix . 'eq_quote_submissions';
         $charset_collate = $wpdb->get_charset_collate();
@@ -251,6 +333,13 @@ class Evonee_Quote_Ajax {
             $wpdb->query("ALTER TABLE {$wpdb->prefix}eq_quote_submissions ADD COLUMN token_expiry DATETIME DEFAULT NULL AFTER acceptance_token;");
         }
 
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter
+        $col_art = $wpdb->get_row($wpdb->prepare("SHOW COLUMNS FROM {$wpdb->prefix}eq_quote_submissions LIKE %s", 'artwork_url'));
+        if (!empty($col_art) && isset($col_art->Type) && stripos($col_art->Type, 'varchar') !== false) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $wpdb->query("ALTER TABLE {$wpdb->prefix}eq_quote_submissions MODIFY artwork_url TEXT DEFAULT '';");
+        }
+
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
 
         // 2. Activity Log Table
@@ -281,6 +370,8 @@ class Evonee_Quote_Ajax {
             KEY submission_id (submission_id)
         ) $charset_collate;";
         dbDelta($sql_email);
+
+        update_option('evonee_db_schema_version', self::DB_SCHEMA_VERSION);
     }
 
     public static function maybe_add_admin_notes_column() {
@@ -306,7 +397,7 @@ class Evonee_Quote_Ajax {
             product varchar(150) NOT NULL,
             quantity varchar(50) NOT NULL,
             product_details longtext DEFAULT '',
-            artwork_url varchar(255) DEFAULT '',
+            artwork_url text DEFAULT '',
             timeframe varchar(50) NOT NULL,
             specific_date varchar(50) DEFAULT '',
             zip_code varchar(30) NOT NULL,
@@ -464,7 +555,9 @@ class Evonee_Quote_Ajax {
         }
 
         // 7. Validate & Process Artwork Upload (Multi-file support up to 3 files)
-        $artwork_urls = [];
+        $artwork_urls   = [];
+        $artwork_errors = [];
+        $had_artwork    = false;
         // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Artwork file is validated and uploaded via validate_and_upload_artwork()
         if (!$no_artwork && isset($_FILES['eq_artwork']) && !empty($_FILES['eq_artwork']['name'])) {
             // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
@@ -472,28 +565,47 @@ class Evonee_Quote_Ajax {
             if (is_array($files['name'])) {
                 $count = min(count($files['name']), 3);
                 for ($i = 0; $i < $count; $i++) {
-                    if (!empty($files['name'][$i]) && $files['error'][$i] === UPLOAD_ERR_OK) {
-                        $single_file = [
-                            'name'     => $files['name'][$i],
-                            'type'     => $files['type'][$i],
-                            'tmp_name' => $files['tmp_name'][$i],
-                            'error'    => $files['error'][$i],
-                            'size'     => $files['size'][$i],
-                        ];
-                        $upload_result = $this->validate_and_upload_artwork($single_file);
-                        if (!is_wp_error($upload_result)) {
-                            $artwork_urls[] = $upload_result;
-                        }
+                    if (empty($files['name'][$i])) {
+                        continue;
+                    }
+                    $had_artwork = true;
+                    if ($files['error'][$i] !== UPLOAD_ERR_OK) {
+                        $artwork_errors[] = 'File upload error code: ' . $files['error'][$i];
+                        continue;
+                    }
+                    $single_file = [
+                        'name'     => $files['name'][$i],
+                        'type'     => $files['type'][$i],
+                        'tmp_name' => $files['tmp_name'][$i],
+                        'error'    => $files['error'][$i],
+                        'size'     => $files['size'][$i],
+                    ];
+                    $upload_result = $this->validate_and_upload_artwork($single_file);
+                    if (is_wp_error($upload_result)) {
+                        $artwork_errors[] = $upload_result->get_error_message();
+                    } else {
+                        $artwork_urls[] = $upload_result;
                     }
                 }
             } else {
+                $had_artwork = true;
                 $upload_result = $this->validate_and_upload_artwork($files);
-                if (!is_wp_error($upload_result)) {
+                if (is_wp_error($upload_result)) {
+                    $artwork_errors[] = $upload_result->get_error_message();
+                } else {
                     $artwork_urls[] = $upload_result;
                 }
             }
         }
-        $artwork_url = implode(', ', $artwork_urls);
+
+        if ($had_artwork && empty($artwork_urls) && !empty($artwork_errors)) {
+            wp_send_json_error([
+                'message' => 'Artwork upload failed: ' . $artwork_errors[0],
+                'errors'  => ['artwork' => $artwork_errors[0]],
+            ]);
+        }
+
+        $artwork_url = !empty($artwork_urls) ? wp_json_encode($artwork_urls) : '';
 
         // 8. Prepare Submission Array
         $submission = [
@@ -542,6 +654,8 @@ class Evonee_Quote_Ajax {
         if ($inserted === false) {
             wp_send_json_error(['message' => 'An internal error occurred while saving your request. Please try again.'], 500);
         }
+
+        $submission['id'] = (int) $wpdb->insert_id;
 
         delete_transient('evonee_dashboard_stats');
 
@@ -646,14 +760,21 @@ class Evonee_Quote_Ajax {
             'eps'  => ['application/postscript', 'image/x-eps', 'application/eps']
         ];
 
-        // Validate MIME type & Extension
-        $wp_filetype = wp_check_filetype_and_ext($file_array['tmp_name'], $file_array['name'], $mimes);
-        
         $ext = strtolower(pathinfo($file_array['name'], PATHINFO_EXTENSION));
         $allowed_exts = ['ai', 'pdf', 'eps', 'svg', 'png', 'jpg', 'jpeg'];
-        
-        if (!in_array($ext, $allowed_exts)) {
+
+        if (!in_array($ext, $allowed_exts, true)) {
             return new WP_Error('invalid_extension', 'Invalid file format. Allowed formats: AI, PDF, EPS, SVG, PNG, JPG.');
+        }
+
+        $wp_filetype = wp_check_filetype_and_ext($file_array['tmp_name'], $file_array['name'], $mimes);
+        if (!empty($wp_filetype['proper_filename'])) {
+            $file_array['name'] = $wp_filetype['proper_filename'];
+        }
+
+        $strict_exts = ['png', 'jpg', 'jpeg', 'pdf', 'svg'];
+        if (in_array($ext, $strict_exts, true) && empty($wp_filetype['type'])) {
+            return new WP_Error('invalid_type', 'File type could not be verified. Please upload a valid artwork file.');
         }
 
         // Custom upload directory callback
@@ -699,6 +820,9 @@ class Evonee_Quote_Ajax {
                 $clean_svg = preg_replace('/(?:xlink:href|href)\s*=\s*["\']?\s*(?:javascript|data):[^"\'>\s]*/i', 'href="#"', $clean_svg);
                 // Strip style attributes containing javascript: or expression()
                 $clean_svg = preg_replace('/style\s*=\s*"[^"]*(?:javascript:|expression\s*\()[^"]*"/i', '', $clean_svg);
+                if (preg_match('/<script|on[a-z]+\s*=|javascript:|foreignObject/i', $clean_svg)) {
+                    return new WP_Error('unsafe_svg', 'SVG file contains unsafe content and was rejected.');
+                }
                 file_put_contents($uploaded_file_path, $clean_svg);
             }
         }
@@ -710,15 +834,16 @@ class Evonee_Quote_Ajax {
      * Get Visitor Real Client IP Address
      */
     private function get_client_ip() {
-        $ip_keys = ['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'];
-        foreach ($ip_keys as $key) {
-            if (!empty($_SERVER[$key])) {
-                // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-                $raw_ip = sanitize_text_field(wp_unslash($_SERVER[$key]));
-                $ip = trim(explode(',', $raw_ip)[0]);
-                if (filter_var($ip, FILTER_VALIDATE_IP)) {
-                    return $ip;
-                }
+        if (!empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
+            $ip = sanitize_text_field(wp_unslash($_SERVER['HTTP_CF_CONNECTING_IP']));
+            if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                return $ip;
+            }
+        }
+        if (!empty($_SERVER['REMOTE_ADDR'])) {
+            $ip = sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR']));
+            if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                return $ip;
             }
         }
         return '127.0.0.1';

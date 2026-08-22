@@ -132,11 +132,12 @@ document.addEventListener('DOMContentLoaded', function () {
         if (image && image.trim() !== '') {
             previewImg.src = image;
         } else {
-            previewImg.src = 'https://placehold.co/120x80/6d28d9/ffffff?text=Product';
+            previewImg.src = (typeof eqQuoteData !== 'undefined' && eqQuoteData.placeholder) ? eqQuoteData.placeholder : '';
         }
 
         // Restore draft from LocalStorage
         restoreDraft();
+        toggleWristbandFields();
 
         // Show Modal
         modal.classList.add('eq-modal--active');
@@ -247,7 +248,34 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // Color Swatch sync
+    function isWristbandProduct(name) {
+        return /wristband/i.test(name || '');
+    }
+
+    function toggleWristbandFields() {
+        const wrap = document.getElementById('eq-wristband-details');
+        const productName = productInput ? productInput.value : '';
+        const show = isWristbandProduct(productName);
+        if (wrap) {
+            wrap.style.display = show ? '' : 'none';
+        }
+        ['eq-wristband-type', 'eq-size', 'eq-color'].forEach(function (id) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (show) {
+                el.setAttribute('required', 'required');
+            } else {
+                el.removeAttribute('required');
+            }
+        });
+    }
+
+    if (productInput) {
+        productInput.addEventListener('input', toggleWristbandFields);
+        productInput.addEventListener('change', toggleWristbandFields);
+    }
+
+    toggleWristbandFields();
     const colorSwatch = document.getElementById('eq-color-swatch');
     const colorInput = document.getElementById('eq-color');
     if (colorSwatch && colorInput) {
@@ -297,50 +325,75 @@ document.addEventListener('DOMContentLoaded', function () {
             const dt = e.dataTransfer;
             const files = dt.files;
             if (files.length) {
-                artworkInput.files = files;
-                handleFileSelect(files[0]);
+                assignArtworkFiles(files);
             }
         }
 
         artworkInput.addEventListener('change', function () {
             if (this.files.length) {
-                handleFileSelect(this.files[0]);
+                assignArtworkFiles(this.files);
             }
         });
     }
 
-    function handleFileSelect(file) {
-        clearFieldError('eq-artwork');
+    function escapeHtml(str) {
+        if (str == null) return '';
+        return String(str).replace(/[&<>"']/g, function (s) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[s];
+        });
+    }
 
-        const maxBytes = 20 * 1024 * 1024; // 20MB
-        if (file.size > maxBytes) {
-            showFieldError('eq-artwork', 'File exceeds the maximum limit of 20MB.');
-            artworkInput.value = '';
-            filePreview.style.display = 'none';
-            return;
-        }
-
-        const ext = file.name.split('.').pop().toLowerCase();
+    function assignArtworkFiles(fileList) {
+        const maxBytes = 20 * 1024 * 1024;
         const allowedExts = ['ai', 'pdf', 'eps', 'svg', 'png', 'jpg', 'jpeg'];
-        if (!allowedExts.includes(ext)) {
-            showFieldError('eq-artwork', 'Invalid file type. Allowed formats: AI, PDF, EPS, SVG, PNG, JPG.');
-            artworkInput.value = '';
-            filePreview.style.display = 'none';
-            return;
-        }
+        const dt = new DataTransfer();
+        const accepted = [];
 
-        filePreview.innerHTML = `
-            <div class="eq-file-info">
-                <span>📄 <strong>${file.name}</strong> (${(file.size / (1024 * 1024)).toFixed(2)} MB)</span>
-                <button type="button" class="eq-remove-file" title="Remove file">&times;</button>
-            </div>
-        `;
-        filePreview.style.display = 'block';
+        Array.from(fileList).slice(0, 3).forEach(function (file) {
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (file.size > maxBytes) {
+                showFieldError('eq-artwork', 'File exceeds the maximum limit of 20MB.');
+                return;
+            }
+            if (!allowedExts.includes(ext)) {
+                showFieldError('eq-artwork', 'Invalid file type. Allowed formats: AI, PDF, EPS, SVG, PNG, JPG.');
+                return;
+            }
+            accepted.push(file);
+            dt.items.add(file);
+        });
 
-        filePreview.querySelector('.eq-remove-file').addEventListener('click', function () {
-            artworkInput.value = '';
+        artworkInput.files = dt.files;
+        renderFilePreview(accepted);
+    }
+
+    function renderFilePreview(files) {
+        clearFieldError('eq-artwork');
+        if (!files.length) {
             filePreview.style.display = 'none';
             filePreview.innerHTML = '';
+            return;
+        }
+
+        filePreview.innerHTML = files.map(function (file, i) {
+            return `
+            <div class="eq-file-info" data-index="${i}">
+                <span><strong>${escapeHtml(file.name)}</strong> (${(file.size / (1024 * 1024)).toFixed(2)} MB)</span>
+                <button type="button" class="eq-remove-file" data-index="${i}" title="Remove file">&times;</button>
+            </div>`;
+        }).join('');
+        filePreview.style.display = 'block';
+
+        filePreview.querySelectorAll('.eq-remove-file').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                const idx = parseInt(this.getAttribute('data-index'), 10);
+                const dt = new DataTransfer();
+                Array.from(artworkInput.files).forEach(function (f, i) {
+                    if (i !== idx) dt.items.add(f);
+                });
+                artworkInput.files = dt.files;
+                renderFilePreview(Array.from(dt.files));
+            });
         });
     }
 
@@ -486,9 +539,6 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
                 submitForm('');
             }
-                console.error('Evonee Quote Submit Error:', err);
-                showAlert('error', 'Network error. Please try again.');
-            });
         });
     }
 

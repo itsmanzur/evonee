@@ -67,13 +67,25 @@ add_action('template_redirect', function() {
             wp_die('Invalid or expired quote acceptance link.', 'Evonee Quote System', ['response' => 404]);
         }
 
-        if (!empty($quote->token_expiry) && strtotime($quote->token_expiry) < time()) {
+        if (in_array($quote->status, ['approved', 'rejected'], true) || empty($quote->acceptance_token)) {
+            wp_die('This quote offer has already been responded to.', 'Evonee Quote System', ['response' => 409]);
+        }
+
+        if (!empty($quote->token_expiry) && strtotime($quote->token_expiry . ' UTC') < time()) {
             wp_die('This quote offer link has expired. Please contact support.', 'Evonee Quote System', ['response' => 410]);
         }
 
         $new_status = ($action === 'accept_quote') ? 'approved' : 'rejected';
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-        $wpdb->update($table, ['status' => $new_status], ['id' => $quote->id], ['%s'], ['%d']);
+        $wpdb->update(
+            $table,
+            [
+                'status'            => $new_status,
+                'acceptance_token'  => '',
+                'token_expiry'      => null,
+            ],
+            ['id' => $quote->id]
+        );
 
         $note = ($action === 'accept_quote') ? 'Customer ACCEPTED quote offer via public link' : 'Customer DECLINED quote offer via public link';
         Evonee_Quote_Ajax::log_activity($quote->id, 'customer_response', $note);

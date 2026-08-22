@@ -18,7 +18,7 @@ class Evonee_Quote_Admin {
         wp_enqueue_style('evonee-admin-css', EVONEE_PLUGIN_URL . 'assets/css/admin.css', [], EVONEE_VERSION);
 
         if (strpos($hook, 'evonee-analytics') !== false) {
-            wp_enqueue_script('chartjs', EVONEE_PLUGIN_URL . 'assets/js/chart.min.js', [], '4.4.1', true);
+            wp_enqueue_script('chartjs', 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js', [], '4.4.1', true);
         }
     }
 
@@ -42,14 +42,17 @@ class Evonee_Quote_Admin {
             [$this, 'render_submissions_page']
         );
 
-        add_submenu_page(
-            'evonee-quotes',
-            'Analytics & Reports',
-            'Analytics & Reports',
-            'manage_options',
-            'evonee-analytics',
-            [$this, 'render_analytics_page']
-        );
+        $settings = self::get_settings();
+        if (!isset($settings['enable_analytics']) || $settings['enable_analytics'] === '1') {
+            add_submenu_page(
+                'evonee-quotes',
+                'Analytics & Reports',
+                'Analytics & Reports',
+                'manage_options',
+                'evonee-analytics',
+                [$this, 'render_analytics_page']
+            );
+        }
 
         add_submenu_page(
             'evonee-quotes',
@@ -100,6 +103,8 @@ class Evonee_Quote_Admin {
             'enable_slack'             => '0',
             'slack_webhook_url'        => '',
             'enable_wc_quote_only'     => '0',
+            'products_grid_limit'      => '12',
+            'show_products_title'      => '0',
         ];
 
         $saved = get_option('evonee_quote_settings', []);
@@ -234,10 +239,11 @@ class Evonee_Quote_Admin {
             fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
 
             // Column Headers
-            fputcsv($output, ['ID', 'Date', 'Customer Name', 'Company', 'Email', 'Phone', 'Country', 'Product', 'Quantity', 'Delivery Timeframe', 'Need Date', 'ZIP Code', 'Artwork URL', 'Project Notes', 'Status']);
+            fputcsv($output, ['ID', 'Date', 'Customer Name', 'Company', 'Email', 'Phone', 'Country', 'Product', 'Quantity', 'Product Details', 'Delivery Timeframe', 'Need Date', 'ZIP Code', 'Artwork URL', 'Project Notes', 'Quoted Price', 'Status']);
 
             if (!empty($rows)) {
                 foreach ($rows as $row) {
+                    $art_urls = Evonee_Quote_Ajax::parse_artwork_urls($row['artwork_url'] ?? '');
                     fputcsv($output, [
                         $row['id'],
                         $row['created_at'],
@@ -248,11 +254,13 @@ class Evonee_Quote_Admin {
                         $row['country'],
                         $row['product'],
                         $row['quantity'],
+                        Evonee_Quote_Ajax::format_product_details_text($row['product_details'] ?? ''),
                         $row['timeframe'],
                         $row['specific_date'],
                         $row['zip_code'],
-                        $row['artwork_url'],
+                        implode(' | ', $art_urls),
                         $row['project_notes'],
+                        $row['quoted_price'] ?? '',
                         strtoupper(isset($row['status']) ? $row['status'] : 'new')
                     ]);
                 }
@@ -325,8 +333,8 @@ class Evonee_Quote_Admin {
                         </div>
                         <div class="pdf-meta">
                             <strong style="font-size:16px; color:#1e1b2e;">OFFICIAL QUOTE #<?php echo esc_html($quote->id); ?></strong><br>
-                            Date: <?php echo esc_html(gmdate('F d, Y', strtotime($quote->created_at))); ?><br>
-                            Valid Until: <?php echo esc_html(gmdate('F d, Y', strtotime('+30 days', strtotime($quote->created_at)))); ?>
+                            Date: <?php echo esc_html(wp_date('F d, Y', strtotime($quote->created_at))); ?><br>
+                            Valid Until: <?php echo esc_html(wp_date('F d, Y', strtotime('+30 days', strtotime($quote->created_at)))); ?>
                         </div>
                     </div>
 
@@ -347,6 +355,21 @@ class Evonee_Quote_Admin {
                             Delivery Timeframe: <?php echo esc_html($quote->timeframe); ?><br>
                             <?php if (!empty($quote->specific_date)): ?>Need By Date: <strong><?php echo esc_html($quote->specific_date); ?></strong><br><?php endif; ?>
                             Status: <span style="color:#6d28d9; font-weight:700; text-transform:uppercase;"><?php echo esc_html($quote->status ?: 'new'); ?></span>
+                            <?php
+                            $pdf_details = Evonee_Quote_Ajax::parse_product_details($quote->product_details ?? '');
+                            if (!empty($pdf_details)):
+                                foreach ($pdf_details as $dkey => $dval):
+                                    if ($dval === '' || $dval === null) {
+                                        continue;
+                                    }
+                                    $dlabel = ucwords(str_replace('_', ' ', (string) $dkey));
+                                    $dvalue = is_array($dval) ? implode(', ', $dval) : (string) $dval;
+                            ?>
+                            <br><?php echo esc_html($dlabel); ?>: <?php echo esc_html($dvalue); ?>
+                            <?php
+                                endforeach;
+                            endif;
+                            ?>
                         </div>
                     </div>
 
@@ -394,17 +417,23 @@ class Evonee_Quote_Admin {
             $delete_id = intval($_GET['id']);
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
             $wpdb->delete($table_name, ['id' => $delete_id], ['%d']);
-            echo '<div class="notice notice-success is-dismissible"><p>Submission #' . esc_html($delete_id) . ' deleted successfully.</p></div>';
+            wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=deleted&eq_id=' . $delete_id));
+            exit;
         }
 
         // Handle Status Update
         if (isset($_POST['eq_action'], $_POST['sub_id'], $_POST['status']) && $_POST['eq_action'] === 'update_status' && check_admin_referer('eq_update_status')) {
             $sub_id     = intval($_POST['sub_id']);
             $new_status = sanitize_text_field(wp_unslash($_POST['status']));
+            $allowed_statuses = ['new', 'pending', 'quoted', 'approved', 'completed', 'rejected'];
+            if (!in_array($new_status, $allowed_statuses, true)) {
+                $new_status = 'new';
+            }
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
             $wpdb->update($table_name, ['status' => $new_status], ['id' => $sub_id], ['%s'], ['%d']);
             Evonee_Quote_Ajax::log_activity($sub_id, 'status_change', 'Status updated to ' . strtoupper($new_status));
-            echo '<div class="notice notice-success is-dismissible"><p>Submission #' . esc_html($sub_id) . ' status updated to <strong>' . esc_html(strtoupper($new_status)) . '</strong>.</p></div>';
+            wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=status&eq_id=' . $sub_id));
+            exit;
         }
 
         // Handle Direct Customer Email Reply
@@ -416,17 +445,18 @@ class Evonee_Quote_Admin {
 
             // Generate Token for Quote Acceptance (Phase 3.1)
             $token  = wp_generate_password(32, false);
-            $expiry = gmdate('Y-m-d H:i:s', strtotime('+30 days'));
+            $expiry = gmdate('Y-m-d H:i:s', time() + (30 * DAY_IN_SECONDS));
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
             $wpdb->update($table_name, ['acceptance_token' => $token, 'token_expiry' => $expiry], ['id' => $sub_id], ['%s', '%s'], ['%d']);
 
             $accept_url  = add_query_arg(['eq_action' => 'accept_quote', 'token' => $token], home_url());
             $decline_url = add_query_arg(['eq_action' => 'decline_quote', 'token' => $token], home_url());
 
+            $sales_email = Evonee_Quote_Ajax::get_sales_email();
             $headers = [
                 'Content-Type: text/html; charset=UTF-8',
-                'From: Evonee Sales <' . EQ_SALES_EMAIL . '>',
-                'Reply-To: ' . EQ_SALES_EMAIL
+                'From: Evonee Sales <' . $sales_email . '>',
+                'Reply-To: ' . $sales_email
             ];
 
             $mail_body = '
@@ -447,7 +477,7 @@ class Evonee_Quote_Admin {
                         <a href="' . esc_url($decline_url) . '" style="display:inline-block; background:#dc2626; color:#ffffff; padding:10px 16px; border-radius:6px; font-weight:bold; text-decoration:none;">❌ Decline Quote</a>
                     </div>
                     <div style="background: #f1f5f9; padding: 14px 24px; font-size: 12px; color: #64748b; text-align: center;">
-                        Evonee Promotional Products &bull; <a href="mailto:' . EQ_SALES_EMAIL . '" style="color:#6d28d9;">' . EQ_SALES_EMAIL . '</a>
+                        Evonee Promotional Products &bull; <a href="mailto:' . esc_attr($sales_email) . '" style="color:#6d28d9;">' . esc_html($sales_email) . '</a>
                     </div>
                 </div>
             </body>
@@ -460,23 +490,26 @@ class Evonee_Quote_Admin {
                 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
                 $wpdb->update($table_name, ['status' => 'quoted'], ['id' => $sub_id], ['%s'], ['%d']);
                 Evonee_Quote_Ajax::log_activity($sub_id, 'status_change', 'Status updated to QUOTED via Email Reply');
-                echo '<div class="notice notice-success is-dismissible"><p>📧 Quote reply email successfully sent to <strong>' . esc_html($customer_email) . '</strong>! Status updated to QUOTED.</p></div>';
-            } else {
-                echo '<div class="notice notice-error is-dismissible"><p>⚠️ Failed to send email. Please check your WordPress email server settings.</p></div>';
+                wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=email_sent'));
+                exit;
             }
+            wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=email_failed'));
+            exit;
         }
 
         // Handle Bulk Deletion / Bulk Status Update
         if (isset($_POST['bulk_action'], $_POST['bulk_ids']) && !empty($_POST['bulk_ids']) && check_admin_referer('eq_bulk_action')) {
             $bulk_ids = array_map('intval', (array) wp_unslash($_POST['bulk_ids']));
+            $bulk_ids = array_filter($bulk_ids);
             $action   = sanitize_text_field(wp_unslash($_POST['bulk_action']));
 
-            if ($action === 'delete') {
+            if (!empty($bulk_ids) && $action === 'delete') {
                 $placeholders = implode(',', array_fill(0, count($bulk_ids), '%d'));
                 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, PluginCheck.Security.DirectDB.UnescapedDBParameter
                 $wpdb->query($wpdb->prepare("DELETE FROM {$table_name} WHERE id IN ($placeholders)", ...$bulk_ids));
-                echo '<div class="notice notice-success is-dismissible"><p>' . esc_html(count($bulk_ids)) . ' submissions deleted successfully.</p></div>';
-            } elseif (in_array($action, ['status_new', 'status_pending', 'status_quoted', 'status_approved', 'status_completed', 'status_rejected'], true)) {
+                wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=bulk_deleted&eq_count=' . count($bulk_ids)));
+                exit;
+            } elseif (!empty($bulk_ids) && in_array($action, ['status_new', 'status_pending', 'status_quoted', 'status_approved', 'status_completed', 'status_rejected'], true)) {
                 $status_val = str_replace('status_', '', $action);
                 $placeholders = implode(',', array_fill(0, count($bulk_ids), '%d'));
                 $query_args = array_merge([$status_val], $bulk_ids);
@@ -485,7 +518,8 @@ class Evonee_Quote_Admin {
                 foreach ($bulk_ids as $bid) {
                     Evonee_Quote_Ajax::log_activity($bid, 'status_change', 'Bulk status update to ' . strtoupper($status_val));
                 }
-                echo '<div class="notice notice-success is-dismissible"><p>' . esc_html(count($bulk_ids)) . ' submissions updated to status ' . esc_html(strtoupper($status_val)) . '.</p></div>';
+                wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=bulk_status'));
+                exit;
             }
         }
 
@@ -521,9 +555,9 @@ class Evonee_Quote_Admin {
         if ($date_range === 'today') {
             $where_clauses[] = $wpdb->prepare("DATE(created_at) = %s", current_time('Y-m-d'));
         } elseif ($date_range === 'last_7_days') {
-            $where_clauses[] = $wpdb->prepare("created_at >= %s", gmdate('Y-m-d H:i:s', strtotime('-7 days')));
+            $where_clauses[] = $wpdb->prepare("created_at >= %s", wp_date('Y-m-d H:i:s', time() - (7 * DAY_IN_SECONDS)));
         } elseif ($date_range === 'this_month') {
-            $where_clauses[] = $wpdb->prepare("created_at >= %s", gmdate('Y-m-01 00:00:00'));
+            $where_clauses[] = $wpdb->prepare("created_at >= %s", wp_date('Y-m-01 00:00:00'));
         } elseif ($date_range === 'followup_due') {
             $where_clauses[] = $wpdb->prepare("follow_up_date IS NOT NULL AND follow_up_date <= %s", current_time('Y-m-d'));
         }
@@ -538,6 +572,25 @@ class Evonee_Quote_Admin {
         $export_url = wp_nonce_url(admin_url('admin.php?page=evonee-quotes&action=export_csv'), 'eq_export_csv_nonce');
         ?>
         <div class="wrap evonee-admin-wrap">
+            <?php
+            if (isset($_GET['eq_notice'])) {
+                $notice = sanitize_text_field(wp_unslash($_GET['eq_notice']));
+                $nid    = isset($_GET['eq_id']) ? intval($_GET['eq_id']) : 0;
+                $ncount = isset($_GET['eq_count']) ? intval($_GET['eq_count']) : 0;
+                $msgs   = [
+                    'deleted'       => 'Submission #' . $nid . ' deleted successfully.',
+                    'status'        => 'Submission #' . $nid . ' status updated.',
+                    'email_sent'    => 'Quote reply email sent successfully. Status updated to QUOTED.',
+                    'email_failed'  => 'Failed to send email. Please check your WordPress email server settings.',
+                    'bulk_deleted'  => $ncount . ' submissions deleted successfully.',
+                    'bulk_status'   => 'Selected submissions updated.',
+                ];
+                if (isset($msgs[$notice])) {
+                    $class = ($notice === 'email_failed') ? 'notice-error' : 'notice-success';
+                    echo '<div class="notice ' . esc_attr($class) . ' is-dismissible"><p>' . esc_html($msgs[$notice]) . '</p></div>';
+                }
+            }
+            ?>
             <div class="evonee-admin-header">
                 <div>
                     <h1 class="wp-heading-inline">📥 Evonee Quote Submissions</h1>
@@ -612,17 +665,14 @@ class Evonee_Quote_Admin {
                                 <span style="color:#94a3b8; font-size:12px;">
                                     Showing <?php echo esc_html(min(($offset + 1), $total_count)); ?>–<?php echo esc_html(min($offset + $per_page, $total_count)); ?> of <?php echo esc_html($total_count); ?>
                                 </span>
-                                <form method="get" style="display:inline-flex; align-items:center; gap:4px; margin:0;">
-                                    <input type="hidden" name="page" value="evonee-quotes">
-                                    <?php if (!empty($search)):?><input type="hidden" name="s" value="<?php echo esc_attr($search);?>"><?php endif;?>
-                                    <?php if (!empty($status_filter)):?><input type="hidden" name="status_filter" value="<?php echo esc_attr($status_filter);?>"><?php endif;?>
+                                <span style="display:inline-flex; align-items:center; gap:4px; margin:0;">
                                     <label style="font-size:12px; color:#64748b;">Per page:</label>
-                                    <select name="per_page" onchange="this.form.submit();" style="font-size:12px; padding:2px 4px;">
+                                    <select name="per_page" form="eq-per-page-form" onchange="document.getElementById('eq-per-page-form').submit();" style="font-size:12px; padding:2px 4px;">
                                         <?php foreach ([20, 50, 100] as $pp): ?>
                                             <option value="<?php echo esc_attr($pp); ?>" <?php selected($per_page, $pp); ?>><?php echo esc_html($pp); ?></option>
                                         <?php endforeach; ?>
                                     </select>
-                                </form>
+                                </span>
                             </div>
                         </div>
 
@@ -702,26 +752,28 @@ class Evonee_Quote_Admin {
                                             <?php endif; ?>
                                         </td>
                                         <td>
-                                            <?php if (!empty($row->artwork_url)): ?>
-                                                <a href="<?php echo esc_url($row->artwork_url); ?>" target="_blank" class="button button-small button-secondary">📥 View File</a>
-                                            <?php else: ?>
+                                            <?php
+                                            $art_urls = Evonee_Quote_Ajax::parse_artwork_urls($row->artwork_url ?? '');
+                                            if (!empty($art_urls)):
+                                                foreach ($art_urls as $ai => $aurl):
+                                            ?>
+                                                <a href="<?php echo esc_url($aurl); ?>" target="_blank" rel="noopener noreferrer" class="button button-small button-secondary">File <?php echo esc_html((string) ($ai + 1)); ?></a>
+                                            <?php
+                                                endforeach;
+                                            else:
+                                            ?>
                                                 <span style="color: #94a3b8; font-style: italic; font-size:11.5px;">Design Help</span>
                                             <?php endif; ?>
                                         </td>
                                         <td>
-                                            <form method="post" style="margin:0;">
-                                                <?php wp_nonce_field('eq_update_status'); ?>
-                                                <input type="hidden" name="eq_action" value="update_status">
-                                                <input type="hidden" name="sub_id" value="<?php echo esc_attr($row->id); ?>">
-                                                <select name="status" class="evonee-status-select evonee-status-<?php echo esc_attr($st); ?>" onchange="this.form.submit();">
-                                                    <option value="new" <?php selected($st, 'new'); ?>>New</option>
-                                                    <option value="pending" <?php selected($st, 'pending'); ?>>Pending</option>
-                                                    <option value="quoted" <?php selected($st, 'quoted'); ?>>Quoted</option>
-                                                    <option value="approved" <?php selected($st, 'approved'); ?>>Approved</option>
-                                                    <option value="completed" <?php selected($st, 'completed'); ?>>Completed</option>
-                                                    <option value="rejected" <?php selected($st, 'rejected'); ?>>Rejected</option>
-                                                </select>
-                                            </form>
+                                            <select class="evonee-status-select evonee-status-<?php echo esc_attr($st); ?>" data-id="<?php echo esc_attr($row->id); ?>">
+                                                <option value="new" <?php selected($st, 'new'); ?>>New</option>
+                                                <option value="pending" <?php selected($st, 'pending'); ?>>Pending</option>
+                                                <option value="quoted" <?php selected($st, 'quoted'); ?>>Quoted</option>
+                                                <option value="approved" <?php selected($st, 'approved'); ?>>Approved</option>
+                                                <option value="completed" <?php selected($st, 'completed'); ?>>Completed</option>
+                                                <option value="rejected" <?php selected($st, 'rejected'); ?>>Rejected</option>
+                                            </select>
                                         </td>
                                         <td>
                                             <div class="evonee-action-btns">
@@ -747,6 +799,18 @@ class Evonee_Quote_Admin {
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
+                    </form>
+                    <form method="post" id="eq-status-form" style="display:none;">
+                        <?php wp_nonce_field('eq_update_status'); ?>
+                        <input type="hidden" name="eq_action" value="update_status">
+                        <input type="hidden" name="sub_id" id="eq-status-sub-id" value="">
+                        <input type="hidden" name="status" id="eq-status-value" value="">
+                    </form>
+                    <form method="get" id="eq-per-page-form" style="display:none;">
+                        <input type="hidden" name="page" value="evonee-quotes">
+                        <?php if (!empty($search)): ?><input type="hidden" name="s" value="<?php echo esc_attr($search); ?>"><?php endif; ?>
+                        <?php if (!empty($status_filter)): ?><input type="hidden" name="status_filter" value="<?php echo esc_attr($status_filter); ?>"><?php endif; ?>
+                        <?php if (!empty($date_range)): ?><input type="hidden" name="date_range" value="<?php echo esc_attr($date_range); ?>"><?php endif; ?>
                     </form>
 
                     <?php if ($total_pages > 1): ?>
@@ -915,6 +979,44 @@ class Evonee_Quote_Admin {
                 });
             }
 
+            const statusForm = document.getElementById('eq-status-form');
+            document.querySelectorAll('.evonee-status-select').forEach(sel => {
+                sel.addEventListener('change', function() {
+                    if (!statusForm) return;
+                    document.getElementById('eq-status-sub-id').value = this.getAttribute('data-id');
+                    document.getElementById('eq-status-value').value = this.value;
+                    statusForm.submit();
+                });
+            });
+
+            function escapeHtml(str) {
+                if (str == null || str === '') return '';
+                return String(str).replace(/[&<>"']/g, function (s) {
+                    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[s];
+                });
+            }
+
+            function parseArtworkUrls(raw) {
+                if (!raw) return [];
+                if (Array.isArray(raw)) return raw.filter(Boolean);
+                try {
+                    const decoded = JSON.parse(raw);
+                    if (Array.isArray(decoded)) return decoded.filter(Boolean);
+                } catch (e) {}
+                return String(raw).split(/\s*,\s*/).filter(Boolean);
+            }
+
+            function parseProductDetails(raw) {
+                if (!raw) return {};
+                if (typeof raw === 'object' && !Array.isArray(raw)) return raw;
+                try {
+                    const decoded = JSON.parse(raw);
+                    return (decoded && typeof decoded === 'object') ? decoded : {};
+                } catch (e) {
+                    return {};
+                }
+            }
+
             // View Details Modal
             const detailModal = document.getElementById('eq-admin-modal');
             const detailBody  = document.getElementById('eq-detail-body');
@@ -949,41 +1051,54 @@ class Evonee_Quote_Admin {
                     if (actBody) actBody.innerHTML = '<em style="color:#9ca3af;">Loading timeline...</em>';
                     if (emailBody) emailBody.innerHTML = '<em style="color:#9ca3af;">Loading email logs...</em>';
 
-                    let artworkHtml = row.artwork_url
-                        ? `<a href="${row.artwork_url}" target="_blank" class="button button-primary">📥 Download Artwork File</a>`
+                    const artUrls = parseArtworkUrls(row.artwork_url);
+                    let artworkHtml = artUrls.length
+                        ? artUrls.map((url, i) => `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="button button-primary">Download Artwork ${i + 1}</a>`).join(' ')
                         : `<span style="color:#94a3b8; font-style:italic;">No artwork uploaded (Customer requested design assistance)</span>`;
+
+                    const details = parseProductDetails(row.product_details);
+                    const detailRows = Object.keys(details).filter(k => details[k] !== '' && details[k] != null).map(k => {
+                        const label = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                        const val = Array.isArray(details[k]) ? details[k].join(', ') : details[k];
+                        return `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(val)}</p>`;
+                    }).join('');
 
                     detailBody.innerHTML = `
                         <div class="eq-detail-grid">
                             <div class="eq-detail-card">
-                                <h3>👤 Customer Information</h3>
-                                <p><strong>Name:</strong> ${row.full_name}</p>
-                                <p><strong>Company:</strong> ${row.company || 'N/A'}</p>
-                                <p><strong>Email:</strong> <a href="mailto:${row.email}">${row.email}</a></p>
-                                <p><strong>Phone / WhatsApp:</strong> ${row.phone}</p>
-                                <p><strong>Country:</strong> ${row.country}</p>
-                                <p><strong>ZIP / Postal Code:</strong> ${row.zip_code}</p>
+                                <h3>Customer Information</h3>
+                                <p><strong>Name:</strong> ${escapeHtml(row.full_name)}</p>
+                                <p><strong>Company:</strong> ${escapeHtml(row.company || 'N/A')}</p>
+                                <p><strong>Email:</strong> <a href="mailto:${escapeHtml(row.email)}">${escapeHtml(row.email)}</a></p>
+                                <p><strong>Phone / WhatsApp:</strong> ${escapeHtml(row.phone)}</p>
+                                <p><strong>Country:</strong> ${escapeHtml(row.country)}</p>
+                                <p><strong>ZIP / Postal Code:</strong> ${escapeHtml(row.zip_code)}</p>
                             </div>
                             <div class="eq-detail-card">
-                                <h3>📦 Product & Order Requirements</h3>
-                                <p><strong>Product Requested:</strong> <span class="evonee-badge-product">${row.product}</span></p>
-                                <p><strong>Quantity:</strong> ${row.quantity}</p>
-                                <p><strong>Timeframe:</strong> ${row.timeframe}</p>
-                                <p><strong>Specific Need Date:</strong> ${row.specific_date || 'N/A'}</p>
-                                <p><strong>Submitted Date:</strong> ${row.created_at}</p>
+                                <h3>Product & Order Requirements</h3>
+                                <p><strong>Product Requested:</strong> <span class="evonee-badge-product">${escapeHtml(row.product)}</span></p>
+                                <p><strong>Quantity:</strong> ${escapeHtml(row.quantity)}</p>
+                                <p><strong>Timeframe:</strong> ${escapeHtml(row.timeframe)}</p>
+                                <p><strong>Specific Need Date:</strong> ${escapeHtml(row.specific_date || 'N/A')}</p>
+                                <p><strong>Submitted Date:</strong> ${escapeHtml(row.created_at)}</p>
                                 <p><strong>Quoted Price Offer:</strong> <strong style="color:#16a34a;">${row.quoted_price ? '$' + parseFloat(row.quoted_price).toFixed(2) : 'Not Set'}</strong></p>
-                                <p><strong>Current Status:</strong> <strong style="text-transform:uppercase; color:#6d28d9;">${row.status || 'NEW'}</strong></p>
+                                <p><strong>Current Status:</strong> <strong style="text-transform:uppercase; color:#6d28d9;">${escapeHtml(row.status || 'NEW')}</strong></p>
                             </div>
                         </div>
 
                         <div class="eq-detail-card" style="margin-top: 14px;">
-                            <h3>📎 Uploaded Artwork</h3>
+                            <h3>Product Details</h3>
+                            ${detailRows || '<p style="color:#94a3b8;">No additional product details.</p>'}
+                        </div>
+
+                        <div class="eq-detail-card" style="margin-top: 14px;">
+                            <h3>Uploaded Artwork</h3>
                             ${artworkHtml}
                         </div>
 
                         <div class="eq-detail-card" style="margin-top: 14px;">
-                            <h3>📝 Customer Project Notes & Requirements</h3>
-                            <div style="background:#f8fafc; padding:12px 16px; border-radius:6px; border:1px solid #e2e8f0; font-size:13.5px; white-space:pre-wrap;">${row.project_notes || 'No additional notes provided.'}</div>
+                            <h3>Customer Project Notes & Requirements</h3>
+                            <div style="background:#f8fafc; padding:12px 16px; border-radius:6px; border:1px solid #e2e8f0; font-size:13.5px; white-space:pre-wrap;">${escapeHtml(row.project_notes || 'No additional notes provided.')}</div>
                         </div>
                     `;
 
@@ -1005,7 +1120,7 @@ class Evonee_Quote_Admin {
 
                     if (actBody) {
                         if (subActs.length > 0) {
-                            actBody.innerHTML = subActs.map(a => `<div style="margin-bottom:4px; border-bottom:1px dashed #e2e8f0; padding-bottom:4px;"><strong>${a.action}</strong>: ${a.notes} <br><small style="color:#94a3b8;">${a.created_at}</small></div>`).join('');
+                            actBody.innerHTML = subActs.map(a => `<div style="margin-bottom:4px; border-bottom:1px dashed #e2e8f0; padding-bottom:4px;"><strong>${escapeHtml(a.action)}</strong>: ${escapeHtml(a.notes)} <br><small style="color:#94a3b8;">${escapeHtml(a.created_at)}</small></div>`).join('');
                         } else {
                             actBody.innerHTML = '<span style="color:#94a3b8;">No activity logged yet.</span>';
                         }
@@ -1013,7 +1128,7 @@ class Evonee_Quote_Admin {
 
                     if (emailBody) {
                         if (subEmails.length > 0) {
-                            emailBody.innerHTML = subEmails.map(e => `<div style="margin-bottom:4px; border-bottom:1px dashed #bfdbfe; padding-bottom:4px;"><strong>${e.type}</strong> (${e.status}) → ${e.recipient}<br><em>${e.subject}</em><br><small style="color:#94a3b8;">${e.sent_at}</small></div>`).join('');
+                            emailBody.innerHTML = subEmails.map(e => `<div style="margin-bottom:4px; border-bottom:1px dashed #bfdbfe; padding-bottom:4px;"><strong>${escapeHtml(e.type)}</strong> (${escapeHtml(e.status)}) → ${escapeHtml(e.recipient)}<br><em>${escapeHtml(e.subject)}</em><br><small style="color:#94a3b8;">${escapeHtml(e.sent_at)}</small></div>`).join('');
                         } else {
                             emailBody.innerHTML = '<span style="color:#94a3b8;">No email history recorded yet.</span>';
                         }
@@ -1141,6 +1256,8 @@ class Evonee_Quote_Admin {
 
                     replySubId.value = id;
                     replyEmail.value = email;
+                    replyEmail.dataset.name = name || '';
+                    replyEmail.dataset.product = product || '';
                     replySubject.value = `Official Price Quote for ${product} - Evonee (#${id})`;
                     replyBody.value = `Hi ${name},\n\nThank you for reaching out to Evonee regarding your quote request for ${product}.\n\nWe have reviewed your specifications and are pleased to provide you with the following price quote:\n\n- Product: ${product}\n- Price: $ [Enter Price Here]\n- Turnaround Time: [Enter Delivery Timeframe]\n\nPlease let us know if you would like to proceed or if you have any questions!\n\nBest regards,\nEvonee Sales Team\nsales@evonee.com`;
 
@@ -1162,7 +1279,6 @@ class Evonee_Quote_Admin {
                 templateSelect.addEventListener('change', function() {
                     const selected = this.options[this.selectedIndex];
                     if (!selected || !selected.value) return;
-                    const name    = replyBody ? (replyBody.closest('form')?.querySelector('#eq-reply-sub-id')?.value ? '' : '') : '';
                     const custName = replyEmail ? replyEmail.dataset.name || '' : '';
                     const product  = replyEmail ? replyEmail.dataset.product || '' : '';
                     const quoteId  = replySubId ? replySubId.value || '' : '';
@@ -1349,15 +1465,21 @@ class Evonee_Quote_Admin {
                                     </tr>
                                     <tr>
                                         <td><code>limit</code></td>
-                                        <td><code>-1</code></td>
-                                        <td>e.g. <code>12</code>, <code>-1</code></td>
-                                        <td>Maximum number of products to show (<code>-1</code> displays all).</td>
+                                        <td>Settings value (default <code>12</code>)</td>
+                                        <td>e.g. <code>8</code>, <code>12</code>, <code>0</code></td>
+                                        <td>Maximum number of products to show. <code>0</code> displays all. Overrides the Settings option.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>show_title</code></td>
+                                        <td><code>no</code></td>
+                                        <td><code>yes</code> / <code>no</code></td>
+                                        <td>Show the grid heading. Off by default.</td>
                                     </tr>
                                     <tr>
                                         <td><code>title</code></td>
                                         <td><code>Popular Products</code></td>
                                         <td>Any text</td>
-                                        <td>Header title text for the product grid.</td>
+                                        <td>Header title text (only if <code>show_title="yes"</code>).</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -1494,6 +1616,12 @@ class Evonee_Quote_Admin {
      * Render Analytics & Reports Dashboard Page
      */
     public function render_analytics_page() {
+        $settings = self::get_settings();
+        if (isset($settings['enable_analytics']) && $settings['enable_analytics'] !== '1') {
+            wp_safe_redirect(admin_url('admin.php?page=evonee-settings'));
+            exit;
+        }
+
         global $wpdb;
         $table_name = $wpdb->prefix . 'eq_quote_submissions';
 
@@ -1521,6 +1649,24 @@ class Evonee_Quote_Admin {
             FROM {$wpdb->prefix}eq_quote_submissions 
             GROUP BY DATE_FORMAT(created_at, '%Y-%m') 
             ORDER BY created_at ASC LIMIT 12
+        ");
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $top_products = $wpdb->get_results("
+            SELECT product, COUNT(*) as total
+            FROM {$wpdb->prefix}eq_quote_submissions
+            GROUP BY product
+            ORDER BY total DESC
+            LIMIT 10
+        ");
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $top_countries = $wpdb->get_results("
+            SELECT country, COUNT(*) as total
+            FROM {$wpdb->prefix}eq_quote_submissions
+            GROUP BY country
+            ORDER BY total DESC
+            LIMIT 10
         ");
 
         // Conversion Funnel Calculations (Phase 4.2)
@@ -1735,7 +1881,7 @@ class Evonee_Quote_Admin {
      * Render Plugin Settings & Module Manager Page
      */
     public function render_settings_page() {
-        if (isset($_POST['eq_save_settings']) && check_admin_referer('eq_save_settings_nonce')) {
+        if (isset($_POST['eq_save_settings']) && current_user_can('manage_options') && check_admin_referer('eq_save_settings_nonce')) {
             $new_settings = [
                 'sales_email'              => sanitize_email(wp_unslash($_POST['sales_email'] ?? '')),
                 'currency_symbol'          => sanitize_text_field(wp_unslash($_POST['currency_symbol'] ?? '$')),
@@ -1757,6 +1903,12 @@ class Evonee_Quote_Admin {
                 'enable_slack'             => isset($_POST['enable_slack']) ? '1' : '0',
                 'slack_webhook_url'        => sanitize_text_field(wp_unslash($_POST['slack_webhook_url'] ?? '')),
                 'enable_wc_quote_only'     => isset($_POST['enable_wc_quote_only']) ? '1' : '0',
+                'email_logo_url'           => esc_url_raw(wp_unslash($_POST['email_logo_url'] ?? '')),
+                'email_header_color'       => sanitize_hex_color(wp_unslash($_POST['email_header_color'] ?? '')) ?: '#6d28d9',
+                'email_brand_name'         => sanitize_text_field(wp_unslash($_POST['email_brand_name'] ?? '')),
+                'email_footer_text'        => sanitize_text_field(wp_unslash($_POST['email_footer_text'] ?? '')),
+                'products_grid_limit'      => max(0, intval($_POST['products_grid_limit'] ?? 12)),
+                'show_products_title'      => isset($_POST['show_products_title']) ? '1' : '0',
             ];
 
             update_option('evonee_quote_settings', $new_settings);
@@ -1798,12 +1950,16 @@ class Evonee_Quote_Admin {
             }
             update_option('evonee_reply_templates', $reply_templates);
 
-            echo '<div class="notice notice-success is-dismissible"><p>✅ Evonee Quote settings saved successfully!</p></div>';
+            wp_safe_redirect(admin_url('admin.php?page=evonee-settings&eq_notice=saved'));
+            exit;
         }
 
         $settings = self::get_settings();
         ?>
         <div class="wrap evonee-admin-wrap">
+            <?php if (isset($_GET['eq_notice']) && sanitize_text_field(wp_unslash($_GET['eq_notice'])) === 'saved'): ?>
+                <div class="notice notice-success is-dismissible"><p>Evonee Quote settings saved successfully!</p></div>
+            <?php endif; ?>
             <div class="evonee-docs-header" style="background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 100%);">
                 <div>
                     <h1>⚙️ Evonee Quote — Plugin Settings & Module Manager</h1>
@@ -1814,8 +1970,8 @@ class Evonee_Quote_Admin {
                 </div>
             </div>
 
-            <form method="post" action="">
-                <?php wp_nonce_field('eq_save_settings_nonce', 'eq_save_settings_nonce'); ?>
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=evonee-settings')); ?>">
+                <?php wp_nonce_field('eq_save_settings_nonce'); ?>
                 <input type="hidden" name="eq_save_settings" value="1">
 
                 <div class="evonee-docs-grid" style="grid-template-columns: 1fr;">
@@ -2021,6 +2177,23 @@ class Evonee_Quote_Admin {
                                     <label style="font-weight:700; display:block; margin-bottom:6px;">Currency Symbol:</label>
                                     <input type="text" name="currency_symbol" value="<?php echo esc_attr($settings['currency_symbol']); ?>" style="width:80px;" required>
                                     <p class="description">Currency symbol used for live price calculation estimates (e.g. $, €, £, ৳, AED).</p>
+                                </div>
+
+                                <div style="margin-bottom: 16px;">
+                                    <label style="font-weight:700; display:block; margin-bottom:6px;">Product Grid — Items to Display:</label>
+                                    <input type="number" name="products_grid_limit" value="<?php echo esc_attr($settings['products_grid_limit']); ?>" min="0" max="100" style="width:80px;" required>
+                                    <p class="description">How many products to show in the <code>[evonee_products]</code> grid. Use <code>0</code> to show all. Shortcode <code>limit</code> attribute overrides this.</p>
+                                </div>
+
+                                <div class="evonee-setting-row" style="border-bottom:none; padding-bottom:0;">
+                                    <div class="evonee-setting-info">
+                                        <strong>Show Product Grid Title</strong>
+                                        <p>Displays the "Popular Products" heading above the grid. Off by default.</p>
+                                    </div>
+                                    <label class="evonee-toggle">
+                                        <input type="checkbox" name="show_products_title" value="1" <?php checked($settings['show_products_title'], '1'); ?>>
+                                        <span class="evonee-slider"></span>
+                                    </label>
                                 </div>
 
                             </div>

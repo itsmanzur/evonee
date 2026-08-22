@@ -22,6 +22,32 @@
     visibility: hidden !important;
     position: absolute !important;
     left: -9999px !important;
+    width: 1px !important;
+    height: 1px !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+.eq-whatsapp-float {
+    position: fixed;
+    bottom: 25px;
+    right: 25px;
+    z-index: 99990;
+    background: #25D366;
+    color: #ffffff;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    transition: transform 0.2s;
+}
+
+.eq-whatsapp-float:hover {
+    transform: scale(1.1);
+    color: #ffffff;
 }
 
 /* Modal Overlay & Backdrop */

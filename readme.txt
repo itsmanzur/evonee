@@ -38,7 +38,7 @@ Professional AJAX Quote Modal, Price Estimator, PDF Sheet Generator & CRM Lead M
 == Shortcodes Reference ==
 
 * `[evonee_products]` — Displays the popular products grid with interactive Get Quote popup triggers.
-  * Attributes: `cols="6"`, `cols_tablet="3"`, `cols_mobile="2"`, `gap="18px"`, `limit="12"`, `title="Popular Products"`
+  * Attributes: `cols="6"`, `cols_tablet="3"`, `cols_mobile="2"`, `gap="18px"`, `limit="12"`, `show_title="no"`
 * `[evonee_quote_button product="Silicone Wristband" text="Get Free Quote"]` — Renders a standalone quote trigger button for any specific product.
 
 == Elementor & Custom Theme Triggers ==
