@@ -24,6 +24,14 @@ class Evonee_Quote_Ajax {
         add_action('wp_ajax_nopriv_eq_send_message',  [$instance, 'handle_send_message']);
         add_action('wp_ajax_eq_get_messages',         [$instance, 'handle_get_messages']);
         add_action('wp_ajax_nopriv_eq_get_messages',  [$instance, 'handle_get_messages']);
+        add_action('wp_ajax_eq_update_status_kanban', [$instance, 'handle_update_status_kanban']);
+        add_action('wp_ajax_eq_export_settings',      [$instance, 'handle_export_settings']);
+        add_action('wp_ajax_eq_import_settings',      [$instance, 'handle_import_settings']);
+        add_action('wp_ajax_eq_gdpr_export',          [$instance, 'handle_gdpr_export']);
+        add_action('wp_ajax_nopriv_eq_gdpr_export',   [$instance, 'handle_gdpr_export']);
+        add_action('wp_ajax_eq_gdpr_erasure',         [$instance, 'handle_gdpr_erasure']);
+        add_action('wp_ajax_nopriv_eq_gdpr_erasure',  [$instance, 'handle_gdpr_erasure']);
+        add_action('wp_ajax_eq_export_activity_csv',  [$instance, 'handle_export_activity_csv']);
         add_action('rest_api_init',                   [$instance, 'register_rest_routes']);
     }
 
@@ -228,7 +236,20 @@ class Evonee_Quote_Ajax {
             $item->set_name($item_name);
 
             $total_price = floatval($quote->quoted_price) > 0 ? floatval($quote->quoted_price) : 0.00;
-            $item->set_total($total_price);
+
+            $settings       = Evonee_Quote_Admin::get_settings();
+            $enable_deposit = !empty($settings['enable_deposit_payment']);
+            $deposit_pct    = isset($settings['deposit_percentage']) ? floatval($settings['deposit_percentage']) : 50;
+
+            if ($enable_deposit && $deposit_pct > 0 && $deposit_pct < 100) {
+                $deposit_amount = round(($total_price * $deposit_pct) / 100, 2);
+                $item->set_name($item_name . ' (' . $deposit_pct . '% Deposit)');
+                $item->set_total($deposit_amount);
+                $order->add_note(sprintf('Partial Deposit Order: %s%% Deposit of total quoted amount ($%s). Remaining balance due upon completion.', $deposit_pct, number_format($total_price, 2)));
+            } else {
+                $item->set_total($total_price);
+            }
+
             $order->add_item($item);
 
             // Billing details
@@ -1452,6 +1473,200 @@ class Evonee_Quote_Ajax {
             'message'       => 'Quote submitted successfully.',
             'submission_id' => $submission_id,
         ]);
+    }
+
+    /**
+     * Handle Kanban Drag & Drop Status Update
+     */
+    public function handle_update_status_kanban() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        if (!check_ajax_referer('eq_kanban_nonce', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Security check failed.'], 403);
+        }
+
+        $id     = isset($_POST['submission_id']) ? intval($_POST['submission_id']) : 0;
+        $status = isset($_POST['status']) ? sanitize_text_field(wp_unslash($_POST['status'])) : '';
+        $allowed_statuses = ['new', 'pending', 'quoted', 'approved', 'completed', 'rejected'];
+
+        if (!$id || !in_array($status, $allowed_statuses, true)) {
+            wp_send_json_error(['message' => 'Invalid parameters.']);
+        }
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'eq_quote_submissions';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+        $updated = $wpdb->update($table_name, ['status' => $status], ['id' => $id], ['%s'], ['%d']);
+
+        if ($updated !== false) {
+            self::log_activity($id, 'status_updated_kanban', 'Status changed to ' . strtoupper($status) . ' via Kanban Board');
+            delete_transient('evonee_dashboard_stats');
+            delete_transient('evonee_dashboard_widget_stats');
+            wp_send_json_success(['message' => 'Status updated to ' . strtoupper($status)]);
+        }
+        wp_send_json_error(['message' => 'Failed to update status.']);
+    }
+
+    /**
+     * Handle JSON Export of Plugin Settings
+     */
+    public function handle_export_settings() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        if (!check_ajax_referer('eq_export_settings_nonce', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Security check failed.'], 403);
+        }
+
+        $export_data = [
+            'version'         => EVONEE_QUOTE_VERSION,
+            'exported_at'     => current_time('mysql'),
+            'settings'        => Evonee_Quote_Admin::get_settings(),
+            'custom_fields'   => get_option('evonee_quote_custom_fields', []),
+            'reply_templates' => get_option('evonee_reply_templates', []),
+        ];
+
+        header('Content-Type: application/json');
+        header('Content-Disposition: attachment; filename="evonee-settings-export-' . date('Y-m-d') . '.json"');
+        echo wp_json_encode($export_data, JSON_PRETTY_PRINT);
+        exit;
+    }
+
+    /**
+     * Handle JSON Import of Plugin Settings
+     */
+    public function handle_import_settings() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        if (!check_ajax_referer('eq_import_settings_nonce', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Security check failed.'], 403);
+        }
+
+        $json_raw = isset($_POST['json_data']) ? wp_unslash($_POST['json_data']) : '';
+        if (empty($json_raw) && !empty($_FILES['import_file']['tmp_name'])) {
+            // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+            $json_raw = file_get_contents($_FILES['import_file']['tmp_name']);
+        }
+
+        $data = json_decode($json_raw, true);
+        if (!$data || !is_array($data) || empty($data['settings'])) {
+            wp_send_json_error(['message' => 'Invalid JSON configuration file format.']);
+        }
+
+        update_option('evonee_quote_settings', $data['settings']);
+        if (isset($data['custom_fields']) && is_array($data['custom_fields'])) {
+            update_option('evonee_quote_custom_fields', $data['custom_fields']);
+        }
+        if (isset($data['reply_templates']) && is_array($data['reply_templates'])) {
+            update_option('evonee_reply_templates', $data['reply_templates']);
+        }
+
+        wp_send_json_success(['message' => 'Plugin settings and configurations successfully imported!']);
+    }
+
+    /**
+     * Handle GDPR Customer Quote Data Export (JSON)
+     */
+    public function handle_gdpr_export() {
+        $email = isset($_REQUEST['email']) ? sanitize_email(wp_unslash($_REQUEST['email'])) : '';
+        $token = isset($_REQUEST['token']) ? sanitize_text_field(wp_unslash($_REQUEST['token'])) : '';
+
+        if (empty($email)) {
+            wp_send_json_error(['message' => 'Email address is required.'], 400);
+        }
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'eq_quote_submissions';
+
+        if (!current_user_can('manage_options')) {
+            if (empty($token)) {
+                wp_send_json_error(['message' => 'Security token required.'], 403);
+            }
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $quotes = $wpdb->get_results($wpdb->prepare("SELECT id, full_name, email, phone, company, product, quantity, timeframe, project_notes, status, created_at FROM {$table_name} WHERE email = %s AND acceptance_token = %s", $email, $token));
+        } else {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $quotes = $wpdb->get_results($wpdb->prepare("SELECT id, full_name, email, phone, company, product, quantity, timeframe, project_notes, status, created_at FROM {$table_name} WHERE email = %s", $email));
+        }
+
+        if (empty($quotes)) {
+            wp_send_json_error(['message' => 'No matching quote records found for this email address.']);
+        }
+
+        header('Content-Type: application/json');
+        header('Content-Disposition: attachment; filename="gdpr-quote-data-' . sanitize_file_name($email) . '.json"');
+        echo wp_json_encode(['gdpr_export' => $quotes, 'exported_at' => current_time('mysql')], JSON_PRETTY_PRINT);
+        exit;
+    }
+
+    /**
+     * Handle GDPR Right to be Forgotten (Data Erasure)
+     */
+    public function handle_gdpr_erasure() {
+        $email = isset($_POST['email']) ? sanitize_email(wp_unslash($_POST['email'])) : '';
+        $token = isset($_POST['token']) ? sanitize_text_field(wp_unslash($_POST['token'])) : '';
+
+        if (empty($email)) {
+            wp_send_json_error(['message' => 'Email address is required.']);
+        }
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'eq_quote_submissions';
+
+        if (!current_user_can('manage_options')) {
+            if (empty($token)) {
+                wp_send_json_error(['message' => 'Security verification failed.'], 403);
+            }
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+            $updated = $wpdb->query($wpdb->prepare(
+                "UPDATE {$table_name} SET full_name = 'Anonymized User', email = 'anonymized@deleted.local', phone = '', company = '', project_notes = '[GDPR Erased]' WHERE email = %s AND acceptance_token = %s",
+                $email, $token
+            ));
+        } else {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+            $updated = $wpdb->query($wpdb->prepare(
+                "UPDATE {$table_name} SET full_name = 'Anonymized User', email = 'anonymized@deleted.local', phone = '', company = '', project_notes = '[GDPR Erased]' WHERE email = %s",
+                $email
+            ));
+        }
+
+        delete_transient('evonee_dashboard_stats');
+        delete_transient('evonee_dashboard_widget_stats');
+
+        wp_send_json_success(['message' => 'Personal data has been successfully anonymized in compliance with GDPR.']);
+    }
+
+    /**
+     * Handle Exporting Activity Log Timeline to CSV
+     */
+    public function handle_export_activity_csv() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized', 'Error', ['response' => 403]);
+        }
+        if (!check_ajax_referer('eq_export_csv_nonce', 'nonce', false)) {
+            wp_die('Security check failed', 'Error', ['response' => 403]);
+        }
+
+        global $wpdb;
+        $act_table = $wpdb->prefix . 'eq_quote_activity_log';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $logs = $wpdb->get_results("SELECT id, submission_id, action, notes, user_id, created_at FROM {$act_table} ORDER BY id DESC LIMIT 500");
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="evonee-audit-activity-log-' . date('Y-m-d') . '.csv"');
+
+        $output = fopen('php://output', 'w');
+        fputcsv($output, ['Log ID', 'Submission ID', 'Action', 'Notes', 'User ID', 'Timestamp']);
+
+        if (!empty($logs)) {
+            foreach ($logs as $l) {
+                fputcsv($output, [$l->id, $l->submission_id, $l->action, $l->notes, $l->user_id, $l->created_at]);
+            }
+        }
+        fclose($output);
+        exit;
     }
 
     /**

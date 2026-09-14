@@ -16,7 +16,9 @@ class Evonee_Quote_Admin {
         if (strpos($hook, 'evonee') === false) {
             return;
         }
-        wp_enqueue_style('evonee-admin-css', EVONEE_PLUGIN_URL . 'assets/css/admin.css', [], EVONEE_VERSION);
+        $min = (defined('SCRIPT_DEBUG') && SCRIPT_DEBUG) ? '' : '.min';
+        $css_file = file_exists(EVONEE_PLUGIN_DIR . 'assets/css/admin' . $min . '.css') ? 'admin' . $min . '.css' : 'admin.css';
+        wp_enqueue_style('evonee-admin-css', EVONEE_PLUGIN_URL . 'assets/css/' . $css_file, [], EVONEE_VERSION);
 
         if (strpos($hook, 'evonee-analytics') !== false || strpos($hook, 'evonee-quotes') !== false || strpos($hook, 'evonee-dashboard') !== false) {
             wp_enqueue_script('chartjs', EVONEE_PLUGIN_URL . 'assets/js/chart.min.js', [], '4.4.1', true);
@@ -81,6 +83,15 @@ class Evonee_Quote_Admin {
             'evonee-docs',
             [$this, 'render_docs_page']
         );
+
+        add_submenu_page(
+            'evonee-quotes',
+            'Quick Setup Wizard',
+            '⚡ Setup Wizard',
+            'manage_options',
+            'evonee-setup-wizard',
+            [$this, 'render_setup_wizard_page']
+        );
     }
 
     /**
@@ -101,6 +112,8 @@ class Evonee_Quote_Admin {
             'enable_analytics'         => '1',
             'enable_auto_reply'        => '1',
             'enable_wc_auto'           => '1',
+            'enable_deposit_payment'   => '0',
+            'deposit_percentage'       => '50',
             'show_field_company'       => '1',
             'show_field_text_specs'    => '1',
             'show_field_specific_date' => '1',
@@ -3482,8 +3495,30 @@ class Evonee_Quote_Admin {
                                     <label style="font-weight:700; display:block; margin-bottom:4px;">Quantity Tier Breaks & Unit Prices (Format: <code>Quantity|UnitPrice</code> per line):</label>
                                     <textarea name="tiered_price_breaks" rows="5" class="widefat" style="font-family:monospace;" placeholder="50|5.00&#10;100|4.50&#10;500|3.80&#10;1000|3.20"><?php echo esc_textarea($settings['tiered_price_breaks'] ?? ''); ?></textarea>
                                     <p class="description">Example: <code>50|5.00</code> means for 50+ units, estimated unit price is $5.00.</p>
+                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- Backup & Migration Card (Phase 6) -->
+                        <div class="evonee-doc-card" style="margin-top:20px;">
+                            <div class="evonee-card-header" style="background:#faf5ff; border-bottom:1px solid #e9d5ff;">
+                                <span class="dashicons dashicons-backup" style="color:#6d28d9;"></span>
+                                <h2 style="color:#6d28d9;">10. Export & Import Plugin Configuration</h2>
+                            </div>
+                            <div class="evonee-card-body">
+                                <p>Backup your plugin settings, custom fields, email templates, and pricing tiers to a JSON file or migrate them to another WordPress site.</p>
+                                <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
+                                    <button type="button" id="eq-export-settings-btn" class="button button-secondary button-large" style="font-weight:700;">
+                                        📥 Export Settings (JSON)
+                                    </button>
+                                    <div style="display:inline-flex; align-items:center; gap:8px; background:#f8fafc; border:1px solid #cbd5e1; padding:6px 12px; border-radius:8px;">
+                                        <input type="file" id="eq-import-file-input" accept=".json" style="font-size:12px;">
+                                        <button type="button" id="eq-import-settings-btn" class="button button-primary" style="background:#6d28d9; border-color:#6d28d9; font-weight:700;">
+                                            📤 Import Settings
+                                        </button>
+                                    </div>
                                 </div>
->>>>>>> origin/main
+                                <div id="eq-import-msg" style="display:none; font-size:12px; font-weight:700; margin-top:10px;"></div>
                             </div>
                         </div>
                     </div> <!-- End #tab-integrations -->
@@ -3502,6 +3537,75 @@ class Evonee_Quote_Admin {
 
         <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Dark Mode Toggle Logic
+            const darkToggle = document.getElementById('eq-darkmode-toggle');
+            if (darkToggle) {
+                if (localStorage.getItem('evonee_dark_mode') === 'enabled') {
+                    document.body.classList.add('eq-dark-mode');
+                    darkToggle.textContent = '☀️ Light Mode';
+                }
+                darkToggle.addEventListener('click', function() {
+                    document.body.classList.toggle('eq-dark-mode');
+                    if (document.body.classList.contains('eq-dark-mode')) {
+                        localStorage.setItem('evonee_dark_mode', 'enabled');
+                        this.textContent = '☀️ Light Mode';
+                    } else {
+                        localStorage.setItem('evonee_dark_mode', 'disabled');
+                        this.textContent = '🌙 Dark Mode';
+                    }
+                });
+            }
+
+            // Export Settings JSON
+            const exportBtn = document.getElementById('eq-export-settings-btn');
+            if (exportBtn) {
+                exportBtn.addEventListener('click', function() {
+                    window.location.href = ajaxurl + '?action=eq_export_settings&_wpnonce=<?php echo esc_js(wp_create_nonce("eq_export_settings_nonce")); ?>';
+                });
+            }
+
+            // Import Settings JSON
+            const importBtn   = document.getElementById('eq-import-settings-btn');
+            const importFile  = document.getElementById('eq-import-file-input');
+            const importMsg   = document.getElementById('eq-import-msg');
+            if (importBtn && importFile) {
+                importBtn.addEventListener('click', function() {
+                    if (!importFile.files || !importFile.files[0]) {
+                        alert('Please select a JSON settings backup file first.');
+                        return;
+                    }
+                    const formData = new FormData();
+                    formData.append('action', 'eq_import_settings');
+                    formData.append('_wpnonce', '<?php echo esc_js(wp_create_nonce("eq_import_settings_nonce")); ?>');
+                    formData.append('settings_file', importFile.files[0]);
+
+                    importBtn.disabled = true;
+                    importBtn.textContent = 'Importing...';
+
+                    fetch(ajaxurl, { method: 'POST', body: formData })
+                    .then(res => res.json())
+                    .then(data => {
+                        importBtn.disabled = false;
+                        importBtn.textContent = '📤 Import Settings';
+                        if (data.success) {
+                            importMsg.style.display = 'block';
+                            importMsg.style.color = '#16a34a';
+                            importMsg.textContent = '✅ Settings imported successfully! Reloading page...';
+                            setTimeout(() => window.location.reload(), 1200);
+                        } else {
+                            importMsg.style.display = 'block';
+                            importMsg.style.color = '#dc2626';
+                            importMsg.textContent = '❌ Import failed: ' + (data.data || 'Invalid JSON file');
+                        }
+                    })
+                    .catch(err => {
+                        importBtn.disabled = false;
+                        importBtn.textContent = '📤 Import Settings';
+                        alert('Error importing settings: ' + err.message);
+                    });
+                });
+            }
+
             // Tab Switcher Logic
             const tabBtns = document.querySelectorAll('.eq-tab-btn');
             const tabContents = document.querySelectorAll('.eq-tab-content');
@@ -3637,6 +3741,143 @@ class Evonee_Quote_Admin {
             }
         });
         </script>
+        <?php
+    }
+
+    /**
+     * Render Onboarding Setup Wizard Page (3-Step Guided Setup)
+     */
+    public function render_setup_wizard_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized access.');
+        }
+
+        $settings = self::get_settings();
+        $message  = '';
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['eq_wizard_nonce']) && wp_verify_nonce($_POST['eq_wizard_nonce'], 'eq_save_wizard')) {
+            $updated = $settings;
+            if (isset($_POST['sales_email'])) {
+                $updated['sales_email'] = sanitize_email(wp_unslash($_POST['sales_email']));
+            }
+            if (isset($_POST['pdf_company_name'])) {
+                $updated['pdf_company_name'] = sanitize_text_field(wp_unslash($_POST['pdf_company_name']));
+            }
+            if (isset($_POST['currency_symbol'])) {
+                $updated['currency_symbol'] = sanitize_text_field(wp_unslash($_POST['currency_symbol']));
+            }
+            if (isset($_POST['currency_code'])) {
+                $updated['currency_code'] = sanitize_text_field(wp_unslash($_POST['currency_code']));
+            }
+            $updated['enable_pdf_quote']       = isset($_POST['enable_pdf_quote']) ? '1' : '0';
+            $updated['enable_price_calc']      = isset($_POST['enable_price_calc']) ? '1' : '0';
+            $updated['enable_auto_reply']      = isset($_POST['enable_auto_reply']) ? '1' : '0';
+            $updated['enable_deposit_payment'] = isset($_POST['enable_deposit_payment']) ? '1' : '0';
+
+            update_option('evonee_quote_settings', $updated);
+            $settings = $updated;
+            $message  = 'Setup complete! Your Evonee Quotes plugin is now configured.';
+        }
+        ?>
+        <div class="wrap evonee-admin-wrap" style="max-width:900px; margin:40px auto;">
+            <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:16px; padding:32px; box-shadow:0 10px 25px rgba(0,0,0,0.05);">
+                <div style="text-align:center; margin-bottom:30px;">
+                    <span style="font-size:40px; display:inline-block; margin-bottom:10px;">⚡</span>
+                    <h1 style="font-size:28px; font-weight:800; color:#0f172a; margin:0 0 8px;">Evonee Quick Setup Wizard</h1>
+                    <p style="color:#64748b; font-size:15px; margin:0;">Configure your B2B Quotation engine in 3 simple steps.</p>
+                </div>
+
+                <?php if (!empty($message)): ?>
+                    <div style="background:#f0fdf4; border:1px solid #bbf7d0; color:#15803d; padding:14px 20px; border-radius:10px; margin-bottom:24px; font-weight:600; text-align:center;">
+                        ✅ <?php echo esc_html($message); ?>
+                    </div>
+                <?php endif; ?>
+
+                <div style="display:flex; justify-content:space-between; margin-bottom:32px; position:relative;">
+                    <div style="flex:1; text-align:center; position:relative; z-index:2;">
+                        <div style="width:36px; height:36px; border-radius:50%; background:#6d28d9; color:#fff; display:flex; align-items:center; justify-content:center; margin:0 auto 8px; font-weight:800;">1</div>
+                        <div style="font-size:13px; font-weight:700; color:#0f172a;">Business Profile</div>
+                    </div>
+                    <div style="flex:1; text-align:center; position:relative; z-index:2;">
+                        <div style="width:36px; height:36px; border-radius:50%; background:#6d28d9; color:#fff; display:flex; align-items:center; justify-content:center; margin:0 auto 8px; font-weight:800;">2</div>
+                        <div style="font-size:13px; font-weight:700; color:#0f172a;">Core Features</div>
+                    </div>
+                    <div style="flex:1; text-align:center; position:relative; z-index:2;">
+                        <div style="width:36px; height:36px; border-radius:50%; background:#16a34a; color:#fff; display:flex; align-items:center; justify-content:center; margin:0 auto 8px; font-weight:800;">3</div>
+                        <div style="font-size:13px; font-weight:700; color:#0f172a;">Ready to Launch!</div>
+                    </div>
+                </div>
+
+                <form method="post">
+                    <?php wp_nonce_field('eq_save_wizard', 'eq_wizard_nonce'); ?>
+                    
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:24px;">
+                        <div style="background:#faf5ff; border:1px solid #e9d5ff; border-radius:12px; padding:20px;">
+                            <h3 style="margin:0 0 14px; font-size:15px; color:#6d28d9;">📋 Step 1: Business Details</h3>
+                            
+                            <div style="margin-bottom:14px;">
+                                <label style="font-size:12px; font-weight:700; color:#334155; display:block; margin-bottom:4px;">Sales Email Address:</label>
+                                <input type="email" name="sales_email" value="<?php echo esc_attr($settings['sales_email']); ?>" class="widefat" required>
+                            </div>
+                            
+                            <div style="margin-bottom:14px;">
+                                <label style="font-size:12px; font-weight:700; color:#334155; display:block; margin-bottom:4px;">Company Name (for PDF Header):</label>
+                                <input type="text" name="pdf_company_name" value="<?php echo esc_attr($settings['pdf_company_name']); ?>" class="widefat" required>
+                            </div>
+
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                                <div>
+                                    <label style="font-size:12px; font-weight:700; color:#334155; display:block; margin-bottom:4px;">Currency Symbol:</label>
+                                    <input type="text" name="currency_symbol" value="<?php echo esc_attr($settings['currency_symbol']); ?>" class="widefat" required>
+                                </div>
+                                <div>
+                                    <label style="font-size:12px; font-weight:700; color:#334155; display:block; margin-bottom:4px;">Currency Code:</label>
+                                    <input type="text" name="currency_code" value="<?php echo esc_attr($settings['currency_code']); ?>" class="widefat" required>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:20px;">
+                            <h3 style="margin:0 0 14px; font-size:15px; color:#1d4ed8;">⚡ Step 2: Key Modules & Features</h3>
+                            
+                            <label style="display:flex; align-items:center; gap:10px; margin-bottom:12px; font-size:13px; font-weight:600; cursor:pointer;">
+                                <input type="checkbox" name="enable_pdf_quote" value="1" <?php checked($settings['enable_pdf_quote'], '1'); ?>>
+                                Enable PDF Quote Sheet Generation & Downloads
+                            </label>
+
+                            <label style="display:flex; align-items:center; gap:10px; margin-bottom:12px; font-size:13px; font-weight:600; cursor:pointer;">
+                                <input type="checkbox" name="enable_price_calc" value="1" <?php checked($settings['enable_price_calc'], '1'); ?>>
+                                Enable Automatic Price Estimation Engine
+                            </label>
+
+                            <label style="display:flex; align-items:center; gap:10px; margin-bottom:12px; font-size:13px; font-weight:600; cursor:pointer;">
+                                <input type="checkbox" name="enable_auto_reply" value="1" <?php checked($settings['enable_auto_reply'], '1'); ?>>
+                                Send Instant Automated Confirmation Emails to Customers
+                            </label>
+
+                            <label style="display:flex; align-items:center; gap:10px; margin-bottom:12px; font-size:13px; font-weight:600; cursor:pointer;">
+                                <input type="checkbox" name="enable_deposit_payment" value="1" <?php checked($settings['enable_deposit_payment'], '1'); ?>>
+                                Allow Partial Deposit Payments (e.g., 50% upfront)
+                            </label>
+                        </div>
+                    </div>
+
+                    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:20px; margin-bottom:24px;">
+                        <h3 style="margin:0 0 8px; font-size:15px; color:#0f172a;">🚀 Step 3: Embed Form on Your Site</h3>
+                        <p style="font-size:13px; color:#64748b; margin:0 0 12px;">Copy and paste this shortcode onto any Page, Post, or Elementor builder layout:</p>
+                        <div style="background:#0f172a; color:#38bdf8; padding:12px 18px; border-radius:8px; font-family:monospace; font-size:14px; font-weight:700; display:flex; justify-content:space-between; align-items:center;">
+                            <span>[evonee_quote_form]</span>
+                            <button type="button" onclick="navigator.clipboard.writeText('[evonee_quote_form]'); alert('Shortcode copied!');" class="button button-small" style="background:#38bdf8; color:#0f172a; border:none; font-weight:700;">📋 Copy</button>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-submissions')); ?>" class="button button-secondary button-large">Skip to Submissions &rarr;</a>
+                        <button type="submit" class="button button-primary button-large" style="background:#6d28d9; border-color:#6d28d9; font-weight:700; padding:8px 28px;">💾 Save Configuration & Complete Setup</button>
+                    </div>
+                </form>
+            </div>
+        </div>
         <?php
     }
 }

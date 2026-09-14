@@ -201,7 +201,11 @@ class Evonee_Quote_Modal {
     }
 
     public function enqueue_assets() {
-        wp_enqueue_style('evonee-modal-css', EVONEE_PLUGIN_URL . 'assets/css/quote-modal.css', [], EVONEE_VERSION);
+        $min = (defined('SCRIPT_DEBUG') && SCRIPT_DEBUG) ? '' : '.min';
+        $css_file = file_exists(EVONEE_PLUGIN_DIR . 'assets/css/quote-modal' . $min . '.css') ? 'quote-modal' . $min . '.css' : 'quote-modal.css';
+        $js_file  = file_exists(EVONEE_PLUGIN_DIR . 'assets/js/quote-modal' . $min . '.js') ? 'quote-modal' . $min . '.js' : 'quote-modal.js';
+
+        wp_enqueue_style('evonee-modal-css', EVONEE_PLUGIN_URL . 'assets/css/' . $css_file, [], EVONEE_VERSION);
         wp_enqueue_style('evonee-landing-css', EVONEE_PLUGIN_URL . 'assets/css/landing.css', [], EVONEE_VERSION);
 
         $settings = Evonee_Quote_Admin::get_settings();
@@ -211,7 +215,7 @@ class Evonee_Quote_Modal {
             wp_enqueue_script('google-recaptcha-v3', 'https://www.google.com/recaptcha/api.js?render=' . esc_attr($recaptcha_site_key), [], EVONEE_VERSION, true);
         }
 
-        wp_enqueue_script('evonee-modal-js', EVONEE_PLUGIN_URL . 'assets/js/quote-modal.js', [], EVONEE_VERSION, true);
+        wp_enqueue_script('evonee-modal-js', EVONEE_PLUGIN_URL . 'assets/js/' . $js_file, [], EVONEE_VERSION, true);
 
         $max_upload_bytes = min(20 * 1024 * 1024, wp_max_upload_size());
         wp_localize_script('evonee-modal-js', 'eqQuoteData', [
@@ -389,6 +393,16 @@ class Evonee_Quote_Modal {
                             </tbody>
                         </table>
                     </div>
+                <?php endif; ?>
+
+                    <!-- GDPR Compliance Bar -->
+                    <div style="margin-top:20px; padding-top:14px; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                        <span style="font-size:12px; color:#64748b;">🛡️ Privacy & GDPR Data Protection:</span>
+                        <div style="display:flex; gap:8px;">
+                            <a href="<?php echo esc_url(add_query_arg(['action' => 'eq_gdpr_export', 'email' => $user_email], admin_url('admin-ajax.php'))); ?>" style="background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; padding:5px 10px; border-radius:6px; font-size:11px; font-weight:700; text-decoration:none;">📥 Export My Data (JSON)</a>
+                            <button type="button" onclick="if(confirm('Are you sure you want to anonymize your personal quote data under GDPR?')) { fetch('<?php echo esc_url(admin_url('admin-ajax.php')); ?>', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'action=eq_gdpr_erasure&email=<?php echo urlencode($user_email); ?>'}).then(r=>r.json()).then(d=>{alert(d.data.message); location.reload();}); }" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:5px 10px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer;">🗑️ Request Data Erasure</button>
+                        </div>
+                    </div>
 
                     <script>
                     document.addEventListener('DOMContentLoaded', function() {
@@ -482,7 +496,6 @@ class Evonee_Quote_Modal {
                     });
                     </script>
                 <?php endif; ?>
-            <?php endif; ?>
         </div>
         <?php
         return ob_get_clean();

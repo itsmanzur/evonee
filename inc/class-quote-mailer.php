@@ -66,6 +66,9 @@ class Evonee_Quote_Mailer {
                         <a href="' . esc_url($accept_url) . '" style="background:#16a34a; color:#fff; padding:10px 20px; text-decoration:none; border-radius:6px; font-weight:bold; margin-right:10px;">✅ Accept Offer</a>
                         <a href="' . esc_url($decline_url) . '" style="background:#dc2626; color:#fff; padding:10px 16px; text-decoration:none; border-radius:6px; font-weight:bold;">❌ Decline Offer</a>
                     </p>
+                    <p style="text-align:center; margin-top:10px; font-size:13px;">
+                        <a href="https://wa.me/?text=' . rawurlencode('Hi! Inquiring about Quote #' . $quote->id . ' for ' . $quote->product) . '" target="_blank" style="color:#25d366; font-weight:bold; text-decoration:none;">💬 Have questions? Click to Chat on WhatsApp</a>
+                    </p>
                 </div>
             </div>
         </body>

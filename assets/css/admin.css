@@ -776,3 +776,199 @@
     z-index: 100;
     margin-top: 24px;
 }
+
+/* ==========================================================================
+   Category 1: Kanban Board, Dark Mode & Skeleton Loader Styles (v2.5)
+   ========================================================================== */
+
+/* Dark Mode Variables & Overrides */
+body.evonee-dark-mode, .evonee-dark-mode .evonee-admin-wrap {
+    --eq-bg: #0f172a;
+    --eq-card-bg: #1e293b;
+    --eq-text: #f8fafc;
+    --eq-text-muted: #94a3b8;
+    --eq-border: #334155;
+    background-color: #0f172a !important;
+    color: #f8fafc !important;
+}
+
+.evonee-dark-mode .evonee-doc-card,
+.evonee-dark-mode .evonee-sidebar-card,
+.evonee-dark-mode .eq-tab-btn,
+.evonee-dark-mode .eq-sticky-save-bar,
+.evonee-dark-mode .eq-kanban-card {
+    background-color: #1e293b !important;
+    border-color: #334155 !important;
+    color: #f8fafc !important;
+}
+
+.evonee-dark-mode .eq-tab-btn.active {
+    background-color: #0f172a !important;
+    color: #a855f7 !important;
+    border-color: #a855f7 !important;
+}
+
+.evonee-dark-mode .evonee-docs-header h1,
+.evonee-dark-mode .evonee-card-header h2,
+.evonee-dark-mode .eq-kanban-column-title {
+    color: #f8fafc !important;
+}
+
+/* Kanban Board Container & Columns */
+.eq-kanban-board {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(240px, 1fr));
+    gap: 16px;
+    overflow-x: auto;
+    padding: 8px 2px 24px;
+}
+
+.eq-kanban-column {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 14px;
+    min-height: 500px;
+    display: flex;
+    flex-direction: column;
+    transition: background-color 0.2s ease;
+}
+
+.eq-kanban-column.drag-over {
+    background: #f1f5f9;
+    border: 2px dashed #6d28d9;
+}
+
+.eq-kanban-column-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.eq-kanban-column-title {
+    font-weight: 800;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.eq-kanban-count-badge {
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+}
+
+.eq-kanban-cards-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.eq-kanban-card {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 12px 14px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.04);
+    cursor: grab;
+    transition: all 0.2s ease;
+}
+
+.eq-kanban-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px rgba(109, 40, 217, 0.12);
+    border-color: #6d28d9;
+}
+
+.eq-kanban-card:active {
+    cursor: grabbing;
+}
+
+.eq-kanban-card-id {
+    font-size: 11px;
+    font-weight: 700;
+    color: #6d28d9;
+}
+
+.eq-kanban-card-title {
+    font-weight: 700;
+    font-size: 13.5px;
+    margin: 4px 0 2px;
+    color: #0f172a;
+}
+
+.eq-kanban-card-meta {
+    font-size: 11.5px;
+    color: #64748b;
+}
+
+.eq-kanban-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed #e2e8f0;
+    font-size: 11px;
+}
+
+/* Skeleton Loading Animation */
+.eq-skeleton-box {
+    background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+    background-size: 200% 100%;
+    animation: eqSkeletonLoading 1.5s infinite;
+    border-radius: 6px;
+    height: 16px;
+    margin-bottom: 8px;
+}
+
+@keyframes eqSkeletonLoading {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Live PDF Preview Card Styles */
+.eq-pdf-preview-box {
+    background: #ffffff;
+    border: 2px solid #6d28d9;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    font-family: 'Helvetica', Arial, sans-serif;
+    color: #1e293b;
+    position: relative;
+    overflow: hidden;
+}
+
+.eq-pdf-preview-header {
+    border-bottom: 3px solid #6d28d9;
+    padding-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.eq-pdf-preview-stamp {
+    position: absolute;
+    top: 35px;
+    right: 35px;
+    border: 3px solid #16a34a;
+    color: #16a34a;
+    font-weight: 900;
+    font-size: 16px;
+    letter-spacing: 2px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    transform: rotate(-12deg);
+    opacity: 0.85;
+}
