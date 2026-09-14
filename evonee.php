@@ -1,21 +1,21 @@
 <?php
 /**
  * Plugin Name: Evonee - Get Quote System
- * Plugin URI:  https://evonee.com
- * Description: Custom site-wide AJAX Quote Modal & Product Lead Capture System for Evonee.
- * Version:     3.0.0
+ * Description: Professional AJAX Quote Modal, Price Estimator, PDF Sheet Generator & CRM Lead Management for WordPress and WooCommerce.
+ * Version:     1.0.0
  * Author:      Evonee Team
  * License:     GPLv2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: evonee
+ * Domain Path: /languages
  */
 
 if (!defined('ABSPATH')) {
-    exit; // Exit if accessed directly.
+    exit;
 }
 
 // Define Plugin Constants
-define('EVONEE_VERSION', '3.0.0');
+define('EVONEE_VERSION', '1.0.0');
 define('EVONEE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('EVONEE_PLUGIN_URL', plugin_dir_url(__FILE__));
 if (!defined('EQ_SALES_EMAIL')) {

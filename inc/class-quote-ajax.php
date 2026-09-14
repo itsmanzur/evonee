@@ -5,7 +5,7 @@ if (!defined('ABSPATH')) {
 
 class Evonee_Quote_Ajax {
 
-    const DB_SCHEMA_VERSION = '2.1.0';
+    const DB_SCHEMA_VERSION = '1.0.0';
 
     public static function init() {
         $instance = new self();

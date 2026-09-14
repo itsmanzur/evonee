@@ -330,7 +330,7 @@ class Evonee_Quote_Admin {
                     </div>
                     <div class="evonee-docs-brand" style="text-align:right;">
                         <span style="background:rgba(255,255,255,0.15); backdrop-filter:blur(8px); color:#ffffff; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:700; border:1px solid rgba(255,255,255,0.2);">
-                            v3.1 Flagship Edition
+                            v1.0.0 Release Edition
                         </span>
                         <div style="font-size:11px; color:#cbd5e1; margin-top:6px;">📅 <?php echo esc_html(wp_date('F j, Y')); ?></div>
                     </div>
@@ -1779,10 +1779,10 @@ class Evonee_Quote_Admin {
                     <div class="evonee-doc-card">
                         <div class="evonee-card-header">
                             <div class="dashicons-badge"><span class="dashicons dashicons-welcome-widgets-menus"></span></div>
-                            <h2>1. Quick Start & v3.0.0 Flagship Enterprise Overview</h2>
+                            <h2>1. Quick Start & v1.0.0 Overview</h2>
                         </div>
                         <div class="evonee-card-body">
-                            <p>The <strong>Evonee Get Quote Plugin (v3.0.0 Flagship Enterprise)</strong> provides a complete B2B Lead Management & Custom Quote Automation System. It embeds a site-wide modal popup, instant price estimator, front-end customer portal, 1-click WooCommerce order conversion, and automated WP-Cron expiry reminders.</p>
+                            <p>The <strong>Evonee Get Quote Plugin (v1.0.0)</strong> provides a complete B2B Lead Management & Custom Quote Automation System. It embeds a site-wide modal popup, instant price estimator, front-end customer portal, 1-click WooCommerce order conversion, and automated WP-Cron expiry reminders.</p>
 
                             <div class="evonee-feature-box">
                                 <ul>
@@ -1800,7 +1800,7 @@ class Evonee_Quote_Admin {
                     <div class="evonee-doc-card">
                         <div class="evonee-card-header">
                             <div class="dashicons-badge"><span class="dashicons dashicons-admin-generic"></span></div>
-                            <h2>2. Complete v3.0 Module Guide</h2>
+                            <h2>2. Complete v1.0 Module Guide</h2>
                         </div>
                         <div class="evonee-card-body">
                             <table class="evonee-docs-table">
@@ -2021,7 +2021,7 @@ class Evonee_Quote_Admin {
 
                     <div class="evonee-sidebar-card" style="background:linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%); border-color:#e9d5ff;">
                         <h3 style="color:#4c1d95;">💬 Need Support or Customization?</h3>
-                        <p style="color:#6b21a8;">Evonee v3.0 Enterprise Plugin Documentation & Support.</p>
+                        <p style="color:#6b21a8;">Evonee v1.0.0 Plugin Documentation & Support.</p>
                         <a href="mailto:sales@evonee.com" class="button button-primary button-large" style="width:100%; text-align:center; background:linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); border-color:#6d28d9; border-radius:8px; font-weight:700; margin-top:8px;">Contact Developer Team</a>
                     </div>
 
@@ -2161,7 +2161,7 @@ class Evonee_Quote_Admin {
                     <p class="subtitle">Real-time quotation pipeline overview, conversion funnel charts, and business growth insights.</p>
                 </div>
                 <div class="evonee-docs-brand">
-                    <span>v2.0 Business Reports</span>
+                    <span>v1.0.0 Business Reports</span>
                 </div>
             </div>
 
