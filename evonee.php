@@ -27,6 +27,7 @@ require_once EVONEE_PLUGIN_DIR . 'inc/class-quote-modal.php';
 require_once EVONEE_PLUGIN_DIR . 'inc/class-quote-ajax.php';
 require_once EVONEE_PLUGIN_DIR . 'inc/class-quote-mailer.php';
 require_once EVONEE_PLUGIN_DIR . 'inc/class-quote-admin.php';
+require_once EVONEE_PLUGIN_DIR . 'inc/class-quote-elementor.php';
 
 // Plugin Activation Hook - Create Database Table
 register_activation_hook(__FILE__, ['Evonee_Quote_Ajax', 'create_submissions_table']);
@@ -38,6 +39,28 @@ add_action('plugins_loaded', function() {
     Evonee_Quote_Admin::init();
     // Runtime DB migration: ensure admin_notes column exists
     Evonee_Quote_Ajax::maybe_add_admin_notes_column();
+});
+
+// Register Elementor Widget (Phase 2.3)
+add_action('elementor/widgets/register', function($widgets_manager) {
+    if (class_exists('Evonee_Elementor_Quote_Button_Widget')) {
+        $widgets_manager->register(new \Evonee_Elementor_Quote_Button_Widget());
+    }
+});
+
+// Register Gutenberg Block (Phase 2.3)
+add_action('init', function() {
+    register_block_type('evonee/quote-button', [
+        'render_callback' => function($attributes) {
+            $product     = !empty($attributes['product']) ? sanitize_text_field($attributes['product']) : 'Silicone Wristband';
+            $button_text = !empty($attributes['buttonText']) ? sanitize_text_field($attributes['buttonText']) : 'Get Quote';
+            return Evonee_Quote_Modal::quote_button($product, '', '', $button_text);
+        },
+        'attributes' => [
+            'product'    => ['type' => 'string', 'default' => 'Silicone Wristband'],
+            'buttonText' => ['type' => 'string', 'default' => 'Get Quote'],
+        ]
+    ]);
 });
 
 // WP Dashboard Widget
