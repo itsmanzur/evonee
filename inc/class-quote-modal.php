@@ -343,21 +343,111 @@ class Evonee_Quote_Modal {
                                             <span style="background:<?php echo esc_attr($status_bg); ?>; color:#fff; padding:3px 8px; border-radius:12px; font-size:11px; text-transform:uppercase; font-weight:700;"><?php echo esc_html($q->status); ?></span>
                                         </td>
                                         <td style="padding:10px;">
-                                            <?php if (!empty($q->acceptance_token) && $q->status === 'quoted'): 
+                                            <?php 
+                                            $pdf_dl_link = add_query_arg(['eq_action' => 'download_pdf', 'id' => $q->id, 'token' => $q->acceptance_token], home_url());
+                                            if (!empty($q->acceptance_token) && $q->status === 'quoted'): 
                                                 $accept_link  = add_query_arg(['eq_action' => 'accept_quote', 'token' => $q->acceptance_token], home_url());
                                                 $decline_link = add_query_arg(['eq_action' => 'decline_quote', 'token' => $q->acceptance_token], home_url());
                                             ?>
                                                 <a href="<?php echo esc_url($accept_link); ?>" style="background:#16a34a; color:#fff; text-decoration:none; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; margin-right:4px;">Accept</a>
-                                                <a href="<?php echo esc_url($decline_link); ?>" style="background:#dc2626; color:#fff; text-decoration:none; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700;">Decline</a>
-                                            <?php else: ?>
-                                                <span style="color:#94a3b8; font-size:11px;">N/A</span>
+                                                <a href="<?php echo esc_url($decline_link); ?>" style="background:#dc2626; color:#fff; text-decoration:none; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; margin-right:4px;">Decline</a>
                                             <?php endif; ?>
+                                            <?php if (!empty($q->quoted_price) && floatval($q->quoted_price) > 0): ?>
+                                                <a href="<?php echo esc_url($pdf_dl_link); ?>" target="_blank" style="background:#6d28d9; color:#fff; text-decoration:none; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; margin-right:4px;">📄 PDF</a>
+                                            <?php endif; ?>
+                                            <button type="button" class="eq-portal-chat-toggle" data-id="<?php echo esc_attr($q->id); ?>" style="background:#0284c7; color:#fff; border:none; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; cursor:pointer;">💬 Chat</button>
+                                        </td>
+                                    </tr>
+                                    <tr id="eq-chat-row-<?php echo esc_attr($q->id); ?>" style="display:none; background:#faf5ff;">
+                                        <td colspan="7" style="padding:14px; border-bottom:1px solid #e9d5ff;">
+                                            <h4 style="margin:0 0 8px; font-size:12px; color:#6d28d9;">💬 Discussion Thread for Quote #<?php echo esc_html($q->id); ?></h4>
+                                            <div id="eq-portal-msgs-<?php echo esc_attr($q->id); ?>" style="max-height:140px; overflow-y:auto; font-size:12px; background:#fff; border:1px solid #e9d5ff; padding:10px; border-radius:6px; margin-bottom:8px;">
+                                                <em>Loading...</em>
+                                            </div>
+                                            <div style="display:flex; gap:6px;">
+                                                <input type="text" id="eq-portal-input-<?php echo esc_attr($q->id); ?>" placeholder="Type your response..." style="flex:1; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px;">
+                                                <button type="button" class="eq-portal-send-btn" data-id="<?php echo esc_attr($q->id); ?>" style="background:#6d28d9; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">Send Message</button>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
                     </div>
+
+                    <script>
+                    document.addEventListener('DOMContentLoaded', function() {
+                        const ajaxUrl = '<?php echo esc_url(admin_url('admin-ajax.php')); ?>';
+                        
+                        function fetchPortalMsgs(subId) {
+                            const container = document.getElementById('eq-portal-msgs-' + subId);
+                            if (!container) return;
+                            fetch(ajaxUrl + '?action=eq_get_messages&submission_id=' + subId)
+                                .then(r => r.json())
+                                .then(data => {
+                                    if (data.success && data.data && data.data.messages && data.data.messages.length > 0) {
+                                        container.innerHTML = data.data.messages.map(m => {
+                                            const isAdmin = m.sender_type === 'admin';
+                                            const bg = isAdmin ? '#faf5ff' : '#f0fdf4';
+                                            const border = isAdmin ? '#e9d5ff' : '#bbf7d0';
+                                            const label = isAdmin ? '🛡️ Support Team' : '👤 You';
+                                            return `<div style="background:${bg}; border:1px solid ${border}; padding:6px 10px; border-radius:6px; margin-bottom:6px;">
+                                                <strong>${label}</strong> <small style="color:#94a3b8;">${m.created_at}</small>
+                                                <div style="margin-top:2px; color:#1e293b;">${m.message}</div>
+                                            </div>`;
+                                        }).join('');
+                                        container.scrollTop = container.scrollHeight;
+                                    } else {
+                                        container.innerHTML = '<span style="color:#94a3b8; font-style:italic;">No discussion messages yet. Start the conversation below!</span>';
+                                    }
+                                });
+                        }
+
+                        document.querySelectorAll('.eq-portal-chat-toggle').forEach(btn => {
+                            btn.addEventListener('click', function() {
+                                const subId = this.getAttribute('data-id');
+                                const row = document.getElementById('eq-chat-row-' + subId);
+                                if (row) {
+                                    const isHidden = row.style.display === 'none';
+                                    row.style.display = isHidden ? 'table-row' : 'none';
+                                    if (isHidden) fetchPortalMsgs(subId);
+                                }
+                            });
+                        });
+
+                        document.querySelectorAll('.eq-portal-send-btn').forEach(btn => {
+                            btn.addEventListener('click', function() {
+                                const subId = this.getAttribute('data-id');
+                                const input = document.getElementById('eq-portal-input-' + subId);
+                                const msg   = input ? input.value.trim() : '';
+                                if (!msg) return;
+
+                                btn.disabled = true;
+                                btn.textContent = 'Sending...';
+
+                                const fd = new FormData();
+                                fd.append('action', 'eq_send_message');
+                                fd.append('submission_id', subId);
+                                fd.append('sender_type', 'customer');
+                                fd.append('message', msg);
+
+                                fetch(ajaxUrl, { method: 'POST', body: fd })
+                                    .then(r => r.json())
+                                    .then(data => {
+                                        btn.disabled = false;
+                                        btn.textContent = 'Send Message';
+                                        if (data.success) {
+                                            if (input) input.value = '';
+                                            fetchPortalMsgs(subId);
+                                        } else {
+                                            alert(data.data ? data.data.message : 'Failed to send message.');
+                                        }
+                                    })
+                                    .catch(() => { btn.disabled = false; btn.textContent = 'Send Message'; });
+                            });
+                        });
+                    });
+                    </script>
                 <?php endif; ?>
             <?php endif; ?>
         </div>
@@ -841,6 +931,39 @@ class Evonee_Quote_Modal {
                                 </div>
                             </div>
                         </div>
+
+                        <?php
+                        $show_tiered = isset($settings['enable_tiered_pricing']) && $settings['enable_tiered_pricing'] === '1' && !empty($settings['tiered_price_breaks']);
+                        if ($show_tiered):
+                            $raw_breaks = explode("\n", trim($settings['tiered_price_breaks']));
+                        ?>
+                        <!-- Card: Volume Tiered Pricing Table (Step 4) -->
+                        <div class="eq-card eq-card-tiered-pricing">
+                            <h4 class="eq-card-title">📊 Volume Discount Breaks</h4>
+                            <table style="width:100%; border-collapse:collapse; font-size:12px; margin-top:8px;">
+                                <thead>
+                                    <tr style="background:#f8fafc; border-bottom:1px solid #e2e8f0; text-align:left;">
+                                        <th style="padding:6px;">Quantity</th>
+                                        <th style="padding:6px; text-align:right;">Unit Price</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($raw_breaks as $rbreak):
+                                        $parts = explode('|', trim($rbreak));
+                                        if (count($parts) === 2):
+                                    ?>
+                                        <tr style="border-bottom:1px solid #f1f5f9;">
+                                            <td style="padding:6px; font-weight:600; color:#475569;"><?php echo esc_html(trim($parts[0])); ?>+ pcs</td>
+                                            <td style="padding:6px; text-align:right; font-weight:700; color:#6d28d9;"><?php echo esc_html($curr_sym . number_format(floatval($parts[1]), 2)); ?></td>
+                                        </tr>
+                                    <?php
+                                        endif;
+                                    endforeach;
+                                    ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <?php endif; ?>
 
                         <!-- Card 2: Popular Options -->
                         <div class="eq-card">

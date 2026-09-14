@@ -34,6 +34,7 @@ register_activation_hook(__FILE__, ['Evonee_Quote_Ajax', 'create_submissions_tab
 
 // Initialize Core Plugin Components
 add_action('plugins_loaded', function() {
+    load_plugin_textdomain('evonee', false, dirname(plugin_basename(__FILE__)) . '/languages');
     Evonee_Quote_Modal::init();
     Evonee_Quote_Ajax::init();
     Evonee_Quote_Admin::init();
@@ -72,8 +73,41 @@ add_action('wp_dashboard_setup', function() {
     );
 });
 
-// Handle Public Customer Quote Acceptance / Decline Token Endpoint (Phase 3.1)
+// Schedule Weekly Sales Digest Cron (Step 7)
+add_action('evonee_weekly_digest_cron', ['Evonee_Quote_Mailer', 'send_weekly_digest']);
+if (!wp_next_scheduled('evonee_weekly_digest_cron')) {
+    wp_schedule_event(time(), 'weekly', 'evonee_weekly_digest_cron');
+}
+
+// Handle Public Customer Quote Acceptance / Decline / PDF Download Endpoint (Phase 3 & Step 3)
 add_action('template_redirect', function() {
+    // Public PDF Quote Download Action (Step 3)
+    // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+    if (isset($_GET['eq_action']) && sanitize_text_field(wp_unslash($_GET['eq_action'])) === 'download_pdf') {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $token = isset($_GET['token']) ? sanitize_text_field(wp_unslash($_GET['token'])) : '';
+        global $wpdb;
+        $quote = null;
+        if (!empty($token) && $id > 0) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $quote = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}eq_quote_submissions WHERE id = %d AND acceptance_token = %s", $id, $token));
+        } elseif (current_user_can('manage_options') && $id > 0) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $quote = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}eq_quote_submissions WHERE id = %d", $id));
+        }
+
+        if ($quote) {
+            $_GET['action'] = 'generate_pdf_quote';
+            $_GET['id']     = $quote->id;
+            $_REQUEST['_wpnonce'] = wp_create_nonce('eq_generate_pdf_' . $quote->id);
+            $admin = new Evonee_Quote_Admin();
+            $admin->render_submissions_page();
+            exit;
+        }
+    }
+
     // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Public token acceptance link from customer email
     if (isset($_GET['eq_action'], $_GET['token']) && in_array(sanitize_text_field(wp_unslash($_GET['eq_action'])), ['accept_quote', 'decline_quote'], true)) {
         global $wpdb;
@@ -98,19 +132,129 @@ add_action('template_redirect', function() {
             wp_die('This quote offer link has expired. Please contact support.', 'Evonee Quote System', ['response' => 410]);
         }
 
+        // Handle Digital E-Signature Pad for Accept Quote
+        if ($action === 'accept_quote' && (empty($_POST['sig_confirm']) || empty($_POST['signature_data']))) {
+            ?>
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Sign & Accept Quote — Evonee</title>
+                <style>
+                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; color: #1e293b; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+                    .card { background: #ffffff; padding: 32px; border-radius: 14px; border: 1px solid #e2e8f0; max-width: 520px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+                    h1 { color: #16a34a; font-size: 22px; margin-top: 0; display: flex; align-items: center; gap: 8px; }
+                    .quote-summary { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px; margin-bottom: 20px; font-size: 13.5px; }
+                    .canvas-wrap { border: 2px dashed #cbd5e1; border-radius: 10px; background: #ffffff; margin-bottom: 14px; position: relative; touch-action: none; }
+                    canvas { display: block; width: 100%; height: 160px; border-radius: 8px; cursor: crosshair; }
+                    .btn-row { display: flex; gap: 10px; justify-content: space-between; align-items: center; }
+                    .btn-submit { background: #16a34a; color: #ffffff; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; }
+                    .btn-clear { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h1>✍️ Sign & Accept Quote #<?php echo esc_html($quote->id); ?></h1>
+                    <div class="quote-summary">
+                        <strong>Product:</strong> <?php echo esc_html($quote->product); ?><br>
+                        <strong>Quantity:</strong> <?php echo esc_html($quote->quantity); ?><br>
+                        <strong>Quoted Price Offer:</strong> <span style="color:#16a34a; font-weight:800; font-size:16px;"><?php echo (!empty($quote->quoted_price) && floatval($quote->quoted_price) > 0) ? '$' . number_format($quote->quoted_price, 2) : 'Included in Offer'; ?></span>
+                    </div>
+
+                    <form method="post" id="sig-form">
+                        <input type="hidden" name="sig_confirm" value="1">
+                        <input type="hidden" name="signature_data" id="signature_data" value="">
+
+                        <label style="font-size:12px; font-weight:700; color:#475569; display:block; margin-bottom:6px;">Please Draw Your Digital Signature Below:</label>
+                        <div class="canvas-wrap">
+                            <canvas id="eq-canvas" width="450" height="160"></canvas>
+                        </div>
+
+                        <div class="btn-row">
+                            <button type="button" class="btn-clear" id="btn-clear-sig">✕ Clear</button>
+                            <button type="submit" class="btn-submit" id="btn-submit-sig">✅ Confirm & Sign Quote</button>
+                        </div>
+                    </form>
+                </div>
+
+                <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    const canvas = document.getElementById('eq-canvas');
+                    const ctx = canvas.getContext('2d');
+                    let drawing = false;
+
+                    // Set stroke styles
+                    ctx.strokeStyle = '#0f172a';
+                    ctx.lineWidth = 2.5;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+
+                    function getPos(e) {
+                        const rect = canvas.getBoundingClientRect();
+                        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                        return { x: clientX - rect.left, y: clientY - rect.top };
+                    }
+
+                    function startDraw(e) {
+                        drawing = true;
+                        const pos = getPos(e);
+                        ctx.beginPath();
+                        ctx.moveTo(pos.x, pos.y);
+                    }
+
+                    function draw(e) {
+                        if (!drawing) return;
+                        e.preventDefault();
+                        const pos = getPos(e);
+                        ctx.lineTo(pos.x, pos.y);
+                        ctx.stroke();
+                    }
+
+                    function stopDraw() { drawing = false; }
+
+                    canvas.addEventListener('mousedown', startDraw);
+                    canvas.addEventListener('mousemove', draw);
+                    canvas.addEventListener('mouseup', stopDraw);
+                    canvas.addEventListener('mouseleave', stopDraw);
+
+                    canvas.addEventListener('touchstart', startDraw, { passive: false });
+                    canvas.addEventListener('touchmove', draw, { passive: false });
+                    canvas.addEventListener('touchend', stopDraw);
+
+                    document.getElementById('btn-clear-sig').addEventListener('click', function() {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    });
+
+                    document.getElementById('sig-form').addEventListener('submit', function(e) {
+                        const dataUrl = canvas.toDataURL('image/png');
+                        document.getElementById('signature_data').value = dataUrl;
+                    });
+                });
+                </script>
+            </body>
+            </html>
+            <?php
+            exit;
+        }
+
+        $sig_data = isset($_POST['signature_data']) ? sanitize_text_field(wp_unslash($_POST['signature_data'])) : '';
         $new_status = ($action === 'accept_quote') ? 'approved' : 'rejected';
+
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         $wpdb->update(
             $table,
             [
                 'status'            => $new_status,
+                'digital_signature' => $sig_data,
                 'acceptance_token'  => '',
                 'token_expiry'      => null,
             ],
             ['id' => $quote->id]
         );
 
-        $note = ($action === 'accept_quote') ? 'Customer ACCEPTED quote offer via public link' : 'Customer DECLINED quote offer via public link';
+        $note = ($action === 'accept_quote') ? 'Customer SIGNED & ACCEPTED quote offer via public link' : 'Customer DECLINED quote offer via public link';
         Evonee_Quote_Ajax::log_activity($quote->id, 'customer_response', $note);
 
         ?>
@@ -129,8 +273,14 @@ add_action('template_redirect', function() {
         </head>
         <body>
             <div class="card">
-                <h1><?php echo $action === 'accept_quote' ? '🎉 Quote Offer Accepted!' : 'Offer Response Received'; ?></h1>
-                <p><?php echo $action === 'accept_quote' ? 'Thank you for approving your quote request for <strong>' . esc_html($quote->product) . '</strong>. Our team will contact you shortly to begin production.' : 'Thank you for letting us know. We have updated your quote request status.'; ?></p>
+                <h1><?php echo $action === 'accept_quote' ? '🎉 Quote Offer Signed & Accepted!' : 'Offer Response Received'; ?></h1>
+                <p><?php echo $action === 'accept_quote' ? 'Thank you for signing and approving your quote request for <strong>' . esc_html($quote->product) . '</strong>. Our team will contact you shortly to begin production.' : 'Thank you for letting us know. We have updated your quote request status.'; ?></p>
+                <?php if (!empty($sig_data)): ?>
+                    <div style="margin-top:16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px;">
+                        <small style="color:#64748b; font-weight:700; display:block;">Your Recorded Signature:</small>
+                        <img src="<?php echo esc_url($sig_data); ?>" style="max-height:70px; margin-top:6px;">
+                    </div>
+                <?php endif; ?>
                 <a href="<?php echo esc_url(home_url()); ?>" class="btn">Return to Homepage</a>
             </div>
         </body>

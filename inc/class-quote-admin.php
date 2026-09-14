@@ -117,6 +117,13 @@ class Evonee_Quote_Admin {
             'enable_cart_quote'        => '0',
             'products_grid_limit'      => '12',
             'show_products_title'      => '0',
+            // Step 3 & 4 Enterprise Settings
+            'pdf_company_name'         => 'Evonee Promotional Products',
+            'pdf_tax_id'               => '',
+            'pdf_accent_color'         => '#6d28d9',
+            'pdf_terms_text'           => "1. Includes Free Digital Proof & Mockup preview before production.\n2. Price offer valid for 30 days from quote issue date.\n3. Standard production & delivery timeline applies upon artwork approval.",
+            'enable_tiered_pricing'    => '1',
+            'tiered_price_breaks'      => "50|5.00\n100|4.50\n500|3.80\n1000|3.20",
         ];
 
         $saved = get_option('evonee_quote_settings', []);
@@ -809,6 +816,13 @@ class Evonee_Quote_Admin {
                         2. Price offer valid for 30 days from quote issue date.<br>
                         3. Standard production & delivery timeline applies upon artwork approval.
                     </div>
+
+                    <?php if (!empty($quote->digital_signature)): ?>
+                        <div style="margin-top:20px; padding:12px; border:1px dashed #cbd5e1; border-radius:8px; display:inline-block; background:#fafafa;">
+                            <strong style="font-size:11px; color:#475569; display:block;">✍️ Customer Acceptance Signature:</strong>
+                            <img src="<?php echo esc_url($quote->digital_signature); ?>" style="max-height:60px; margin-top:4px;">
+                        </div>
+                    <?php endif; ?>
                 </div>
             </body>
             </html>
@@ -1309,6 +1323,18 @@ class Evonee_Quote_Admin {
                     </div>
                 </div>
 
+                <!-- Quote Discussion Thread (Step 2) -->
+                <div style="border-top:1px solid #e2e8f0; padding:16px 20px; background:#faf5ff;">
+                    <h3 style="margin:0 0 10px; font-size:13px; color:#6d28d9; font-weight:700;">💬 Quote Discussion Thread (Live Customer Messages)</h3>
+                    <div id="eq-discussion-messages" style="max-height:160px; overflow-y:auto; font-size:12px; background:#ffffff; padding:10px; border-radius:6px; border:1px solid #e9d5ff; margin-bottom:10px;">
+                        <em style="color:#9ca3af;">Loading messages...</em>
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" id="eq-admin-chat-input" placeholder="Type a message to customer..." style="flex:1; font-size:12px; padding:6px 10px; border:1px solid #d8b4fe; border-radius:6px;">
+                        <button type="button" id="eq-send-admin-chat-btn" class="button button-primary" style="background:#6d28d9; border-color:#6d28d9;">Send Response</button>
+                    </div>
+                </div>
+
                 <!-- Activity Log & Email History (Phase 2.1 & 2.4) -->
                 <div style="border-top:1px solid #e2e8f0; padding:16px 20px; background:#ffffff;">
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
@@ -1541,6 +1567,33 @@ class Evonee_Quote_Admin {
                         }
                     }
 
+                    function loadDiscussionMessages(subId) {
+                        const discBox = document.getElementById('eq-discussion-messages');
+                        if (!discBox) return;
+                        discBox.innerHTML = '<em style="color:#9ca3af;">Loading messages...</em>';
+                        fetch('<?php echo esc_url(admin_url('admin-ajax.php')); ?>?action=eq_get_messages&submission_id=' + subId)
+                            .then(r => r.json())
+                            .then(data => {
+                                if (data.success && data.data && data.data.messages && data.data.messages.length > 0) {
+                                    discBox.innerHTML = data.data.messages.map(m => {
+                                        const isAdmin = m.sender_type === 'admin';
+                                        const bg = isAdmin ? '#faf5ff' : '#eff6ff';
+                                        const border = isAdmin ? '#e9d5ff' : '#bfdbfe';
+                                        const align = isAdmin ? 'right' : 'left';
+                                        const senderLabel = isAdmin ? '🛡️ Admin (' + escapeHtml(m.sender_name) + ')' : '👤 ' + escapeHtml(m.sender_name);
+                                        return `<div style="background:${bg}; border:1px solid ${border}; padding:6px 10px; border-radius:6px; margin-bottom:6px; text-align:${align};">
+                                            <strong>${senderLabel}</strong> <small style="color:#94a3b8;">${escapeHtml(m.created_at)}</small>
+                                            <div style="margin-top:2px; color:#1e293b;">${escapeHtml(m.message)}</div>
+                                        </div>`;
+                                    }).join('');
+                                    discBox.scrollTop = discBox.scrollHeight;
+                                } else {
+                                    discBox.innerHTML = '<span style="color:#94a3b8; font-style:italic;">No messages in discussion thread yet.</span>';
+                                }
+                            })
+                            .catch(() => { discBox.innerHTML = '<span style="color:#dc2626;">Error loading messages.</span>'; });
+                    }
+
                     if (emailBody) {
                         if (subEmails.length > 0) {
                             emailBody.innerHTML = subEmails.map(e => `<div style="margin-bottom:4px; border-bottom:1px dashed #bfdbfe; padding-bottom:4px;"><strong>${escapeHtml(e.type)}</strong> (${escapeHtml(e.status)}) → ${escapeHtml(e.recipient)}<br><em>${escapeHtml(e.subject)}</em><br><small style="color:#94a3b8;">${escapeHtml(e.sent_at)}</small></div>`).join('');
@@ -1548,6 +1601,8 @@ class Evonee_Quote_Admin {
                             emailBody.innerHTML = '<span style="color:#94a3b8;">No email history recorded yet.</span>';
                         }
                     }
+
+                    loadDiscussionMessages(row.id);
 
                     detailModal.style.display = 'flex';
                 });
@@ -1584,6 +1639,59 @@ class Evonee_Quote_Admin {
                             }
                         })
                         .catch(() => { saveNotesBtn.disabled = false; saveNotesBtn.textContent = '💾 Save Notes'; });
+                });
+            }
+
+            // Send Admin Chat Message (Step 2)
+            const sendChatBtn = document.getElementById('eq-send-admin-chat-btn');
+            const chatInput   = document.getElementById('eq-admin-chat-input');
+            if (sendChatBtn && chatInput) {
+                sendChatBtn.addEventListener('click', function() {
+                    if (!currentDetailId) return;
+                    const msg = chatInput.value.trim();
+                    if (!msg) return;
+                    sendChatBtn.disabled = true;
+                    sendChatBtn.textContent = 'Sending...';
+
+                    const fd = new FormData();
+                    fd.append('action', 'eq_send_message');
+                    fd.append('submission_id', currentDetailId);
+                    fd.append('sender_type', 'admin');
+                    fd.append('message', msg);
+
+                    fetch('<?php echo esc_url(admin_url('admin-ajax.php')); ?>', { method: 'POST', body: fd })
+                        .then(r => r.json())
+                        .then(data => {
+                            sendChatBtn.disabled = false;
+                            sendChatBtn.textContent = 'Send Response';
+                            if (data.success) {
+                                chatInput.value = '';
+                                const discBox = document.getElementById('eq-discussion-messages');
+                                if (discBox) {
+                                    fetch('<?php echo esc_url(admin_url('admin-ajax.php')); ?>?action=eq_get_messages&submission_id=' + currentDetailId)
+                                        .then(r => r.json())
+                                        .then(d => {
+                                            if (d.success && d.data && d.data.messages && d.data.messages.length > 0) {
+                                                discBox.innerHTML = d.data.messages.map(m => {
+                                                    const isAdmin = m.sender_type === 'admin';
+                                                    const bg = isAdmin ? '#faf5ff' : '#eff6ff';
+                                                    const border = isAdmin ? '#e9d5ff' : '#bfdbfe';
+                                                    const align = isAdmin ? 'right' : 'left';
+                                                    const senderLabel = isAdmin ? '🛡️ Admin (' + escapeHtml(m.sender_name) + ')' : '👤 ' + escapeHtml(m.sender_name);
+                                                    return `<div style="background:${bg}; border:1px solid ${border}; padding:6px 10px; border-radius:6px; margin-bottom:6px; text-align:${align};">
+                                                        <strong>${senderLabel}</strong> <small style="color:#94a3b8;">${escapeHtml(m.created_at)}</small>
+                                                        <div style="margin-top:2px; color:#1e293b;">${escapeHtml(m.message)}</div>
+                                                    </div>`;
+                                                }).join('');
+                                                discBox.scrollTop = discBox.scrollHeight;
+                                            }
+                                        });
+                                }
+                            } else {
+                                alert(data.data ? data.data.message : 'Error sending message.');
+                            }
+                        })
+                        .catch(() => { sendChatBtn.disabled = false; sendChatBtn.textContent = 'Send Response'; });
                 });
             }
 
@@ -2391,6 +2499,12 @@ class Evonee_Quote_Admin {
                 'email_footer_text'        => sanitize_text_field(wp_unslash($_POST['email_footer_text'] ?? '')),
                 'products_grid_limit'      => max(0, intval($_POST['products_grid_limit'] ?? 12)),
                 'show_products_title'      => isset($_POST['show_products_title']) ? '1' : '0',
+                'pdf_company_name'         => sanitize_text_field(wp_unslash($_POST['pdf_company_name'] ?? '')),
+                'pdf_tax_id'               => sanitize_text_field(wp_unslash($_POST['pdf_tax_id'] ?? '')),
+                'pdf_accent_color'         => sanitize_hex_color(wp_unslash($_POST['pdf_accent_color'] ?? '')) ?: '#6d28d9',
+                'pdf_terms_text'           => sanitize_textarea_field(wp_unslash($_POST['pdf_terms_text'] ?? '')),
+                'enable_tiered_pricing'    => isset($_POST['enable_tiered_pricing']) ? '1' : '0',
+                'tiered_price_breaks'      => sanitize_textarea_field(wp_unslash($_POST['tiered_price_breaks'] ?? '')),
             ];
 
             update_option('evonee_quote_settings', $new_settings);
@@ -2859,8 +2973,61 @@ class Evonee_Quote_Admin {
                                         <label style="font-size:11px; font-weight:700; color:#64748b; display:block; margin-bottom:2px;">Slack Incoming Webhook URL:</label>
                                         <input type="url" name="slack_webhook_url" value="<?php echo esc_attr($settings['slack_webhook_url']); ?>" class="widefat" placeholder="https://hooks.slack.com/services/T00/B00/XXX">
                                     </div>
+                        <!-- PDF Customizer Card (Step 3) -->
+                        <div class="evonee-doc-card" style="margin-top:20px;">
+                            <div class="evonee-card-header">
+                                <span class="dashicons dashicons-pdf"></span>
+                                <h2>8. PDF Quote Sheet Customizer & Branding</h2>
+                            </div>
+                            <div class="evonee-card-body">
+                                <p>Customize the official PDF quote sheet generated for customers and printable quotes.</p>
+
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:14px;">
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:4px;">Company Name on PDF:</label>
+                                        <input type="text" name="pdf_company_name" value="<?php echo esc_attr($settings['pdf_company_name'] ?? ''); ?>" class="widefat" placeholder="Evonee Promotional Products">
+                                    </div>
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:4px;">Tax / VAT / Business ID:</label>
+                                        <input type="text" name="pdf_tax_id" value="<?php echo esc_attr($settings['pdf_tax_id'] ?? ''); ?>" class="widefat" placeholder="VAT-123456789 / EIN">
+                                    </div>
                                 </div>
 
+                                <div style="margin-bottom:14px;">
+                                    <label style="font-weight:700; display:block; margin-bottom:4px;">PDF Header Accent Color:</label>
+                                    <input type="color" name="pdf_accent_color" value="<?php echo esc_attr($settings['pdf_accent_color'] ?? '#6d28d9'); ?>" style="height:36px; width:60px; cursor:pointer; border:1px solid #d1d5db; border-radius:4px;">
+                                </div>
+
+                                <div>
+                                    <label style="font-weight:700; display:block; margin-bottom:4px;">Terms & Conditions Text:</label>
+                                    <textarea name="pdf_terms_text" rows="4" class="widefat" placeholder="1. Free proof included..."><?php echo esc_textarea($settings['pdf_terms_text'] ?? ''); ?></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Dynamic Volume Tiered Pricing Card (Step 4) -->
+                        <div class="evonee-doc-card" style="margin-top:20px;">
+                            <div class="evonee-card-header">
+                                <span class="dashicons dashicons-chart-line"></span>
+                                <h2>9. Dynamic Volume Tiered Pricing (Bulk Discount Breaks)</h2>
+                            </div>
+                            <div class="evonee-card-body">
+                                <div class="evonee-setting-row" style="margin-bottom:14px;">
+                                    <div class="evonee-setting-info">
+                                        <strong>📊 Enable Volume Discount Table in Modal</strong>
+                                        <p>Displays a live volume discount table in the quote modal as customers enter quantity.</p>
+                                    </div>
+                                    <label class="evonee-toggle">
+                                        <input type="checkbox" name="enable_tiered_pricing" value="1" <?php checked($settings['enable_tiered_pricing'] ?? '1', '1'); ?>>
+                                        <span class="evonee-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div>
+                                    <label style="font-weight:700; display:block; margin-bottom:4px;">Quantity Tier Breaks & Unit Prices (Format: <code>Quantity|UnitPrice</code> per line):</label>
+                                    <textarea name="tiered_price_breaks" rows="5" class="widefat" style="font-family:monospace;" placeholder="50|5.00&#10;100|4.50&#10;500|3.80&#10;1000|3.20"><?php echo esc_textarea($settings['tiered_price_breaks'] ?? ''); ?></textarea>
+                                    <p class="description">Example: <code>50|5.00</code> means for 50+ units, estimated unit price is $5.00.</p>
+                                </div>
                             </div>
                         </div>
 

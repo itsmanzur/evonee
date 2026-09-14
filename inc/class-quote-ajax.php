@@ -16,6 +16,11 @@ class Evonee_Quote_Ajax {
         add_action('wp_ajax_eq_save_followup',        [$instance, 'handle_save_followup']);
         add_action('wp_ajax_eq_save_price_offer',     [$instance, 'handle_save_price_offer']);
         add_action('wp_ajax_eq_convert_to_wc_order',  [$instance, 'handle_convert_to_wc_order']);
+        add_action('wp_ajax_eq_send_message',         [$instance, 'handle_send_message']);
+        add_action('wp_ajax_nopriv_eq_send_message',  [$instance, 'handle_send_message']);
+        add_action('wp_ajax_eq_get_messages',         [$instance, 'handle_get_messages']);
+        add_action('wp_ajax_nopriv_eq_get_messages',  [$instance, 'handle_get_messages']);
+        add_action('rest_api_init',                   [$instance, 'register_rest_routes']);
     }
 
     /**
@@ -457,6 +462,13 @@ class Evonee_Quote_Ajax {
         }
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter
+        $has_sig = $wpdb->get_results($wpdb->prepare("SHOW COLUMNS FROM {$wpdb->prefix}eq_quote_submissions LIKE %s", 'digital_signature'));
+        if (empty($has_sig)) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $wpdb->query("ALTER TABLE {$wpdb->prefix}eq_quote_submissions ADD COLUMN digital_signature LONGTEXT DEFAULT NULL AFTER token_expiry;");
+        }
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter
         $col_art = $wpdb->get_row($wpdb->prepare("SHOW COLUMNS FROM {$wpdb->prefix}eq_quote_submissions LIKE %s", 'artwork_url'));
         if (!empty($col_art) && isset($col_art->Type) && stripos($col_art->Type, 'varchar') !== false) {
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -493,6 +505,20 @@ class Evonee_Quote_Ajax {
             KEY submission_id (submission_id)
         ) $charset_collate;";
         dbDelta($sql_email);
+
+        // 4. Quote Messages Thread Table (Step 2)
+        $msg_table = $wpdb->prefix . 'eq_quote_messages';
+        $sql_msg = "CREATE TABLE $msg_table (
+            id bigint(20) NOT NULL AUTO_INCREMENT,
+            submission_id bigint(20) NOT NULL,
+            sender_type varchar(20) NOT NULL DEFAULT 'customer',
+            sender_name varchar(100) NOT NULL,
+            message text NOT NULL,
+            created_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            PRIMARY KEY  (id),
+            KEY submission_id (submission_id)
+        ) $charset_collate;";
+        dbDelta($sql_msg);
 
         update_option('evonee_db_schema_version', self::DB_SCHEMA_VERSION);
     }
@@ -951,6 +977,131 @@ class Evonee_Quote_Ajax {
         }
 
         return esc_url_raw($move_file['url']);
+    }
+
+    /**
+     * Handle Sending Quote Discussion Messages (Step 2)
+     */
+    public function handle_send_message() {
+        $sub_id  = isset($_POST['submission_id']) ? intval($_POST['submission_id']) : 0;
+        $message = isset($_POST['message']) ? sanitize_textarea_field(wp_unslash($_POST['message'])) : '';
+        $sender  = isset($_POST['sender_type']) ? sanitize_text_field(wp_unslash($_POST['sender_type'])) : 'customer';
+
+        if (!$sub_id || empty($message)) {
+            wp_send_json_error(['message' => 'Invalid parameters.'], 400);
+        }
+
+        global $wpdb;
+        $msg_table = $wpdb->prefix . 'eq_quote_messages';
+        self::maybe_run_phase2_migrations();
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $quote = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}eq_quote_submissions WHERE id = %d", $sub_id));
+        if (!$quote) {
+            wp_send_json_error(['message' => 'Quote submission not found.'], 404);
+        }
+
+        $sender_name = ($sender === 'admin') ? (wp_get_current_user()->display_name ?: 'Sales Team') : $quote->full_name;
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+        $wpdb->insert(
+            $msg_table,
+            [
+                'submission_id' => $sub_id,
+                'sender_type'   => $sender,
+                'sender_name'   => $sender_name,
+                'message'       => $message,
+                'created_at'    => current_time('mysql'),
+            ],
+            ['%d', '%s', '%s', '%s', '%s']
+        );
+
+        self::log_activity($sub_id, 'discussion_message', 'Message sent by ' . strtoupper($sender) . ': ' . substr($message, 0, 40) . '...');
+
+        // Email Notification for Discussion Thread
+        $sales_email = self::get_sales_email();
+        if ($sender === 'customer') {
+            $to      = $sales_email;
+            $subject = '💬 New Customer Message on Quote #' . $sub_id . ' — ' . $quote->full_name;
+            $body    = "Customer {$quote->full_name} ({$quote->email}) sent a message regarding Quote #{$sub_id}:\n\n\"{$message}\"\n\nView submission: " . admin_url('admin.php?page=evonee-submissions');
+        } else {
+            $to      = $quote->email;
+            $subject = '💬 New Response regarding your Quote #' . $sub_id . ' — Evonee';
+            $body    = "Hi {$quote->full_name},\n\nOur team has responded to your quote request:\n\n\"{$message}\"\n\nThank you for choosing Evonee.";
+        }
+
+        wp_mail($to, $subject, $body, ['From: Evonee Sales <' . $sales_email . '>']);
+
+        wp_send_json_success(['message' => 'Message sent successfully.']);
+    }
+
+    /**
+     * Handle Fetching Discussion Messages for a Quote (Step 2)
+     */
+    public function handle_get_messages() {
+        $sub_id = isset($_GET['submission_id']) ? intval($_GET['submission_id']) : 0;
+        if (!$sub_id) {
+            wp_send_json_error(['messages' => []]);
+        }
+
+        global $wpdb;
+        $msg_table = $wpdb->prefix . 'eq_quote_messages';
+        self::maybe_run_phase2_migrations();
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $messages = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}eq_quote_messages WHERE submission_id = %d ORDER BY id ASC", $sub_id));
+
+        wp_send_json_success(['messages' => $messages ?: []]);
+    }
+
+    /**
+     * Register Custom WP REST API Endpoints (Step 6)
+     */
+    public function register_rest_routes() {
+        register_rest_route('evonee/v1', '/quotes', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'rest_get_quotes'],
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            },
+        ]);
+
+        register_rest_route('evonee/v1', '/submit', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'rest_submit_quote'],
+            'permission_callback' => '__return_true',
+        ]);
+
+        register_rest_route('evonee/v1', '/stats', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'rest_get_stats'],
+            'permission_callback' => function() {
+                return current_user_can('manage_options');
+            },
+        ]);
+    }
+
+    public function rest_get_quotes($request) {
+        global $wpdb;
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $results = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}eq_quote_submissions ORDER BY id DESC LIMIT 50");
+        return rest_ensure_response(['success' => true, 'quotes' => $results ?: []]);
+    }
+
+    public function rest_get_stats($request) {
+        return rest_ensure_response(['success' => true, 'stats' => get_transient('evonee_dashboard_stats') ?: []]);
+    }
+
+    public function rest_submit_quote($request) {
+        $params = $request->get_params();
+        if (!empty($params) && is_array($params)) {
+            foreach ($params as $k => $v) {
+                if (is_string($v)) {
+                    $_POST[$k] = sanitize_text_field(wp_unslash($v));
+                }
+            }
+        }
+        return rest_ensure_response(['success' => true, 'message' => 'Quote submission endpoint ready via REST API.']);
     }
 
     /**

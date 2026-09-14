@@ -488,7 +488,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 .then(data => {
                     setLoading(false);
                     if (data.success) {
-                        showAlert('success', data.data.message || 'Quote request received! We will respond within 24 hours.');
+                        playSuccessChime();
+                        showAlert('success', data.data.message || 'Quote request received! We will get back to you within 24 hours.');
 
                         // Clear only user-filled fields, not product info pre-filled from trigger
                         const fieldsToClear = ['eq-full-name', 'eq-company', 'eq-email', 'eq-phone',
@@ -543,6 +544,25 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // --- HELPERS ---
+    function playSuccessChime() {
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            const ctx = new AudioCtx();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.2);
+            gain.gain.setValueAtTime(0.15, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.4);
+        } catch (e) {}
+    }
+
     function setLoading(isLoading) {
         if (!submitBtn) return;
         if (isLoading) {
