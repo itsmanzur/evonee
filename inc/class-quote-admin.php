@@ -9,6 +9,7 @@ class Evonee_Quote_Admin {
         $instance = new self();
         add_action('admin_menu', [$instance, 'add_admin_menu']);
         add_action('admin_enqueue_scripts', [$instance, 'enqueue_admin_assets']);
+        add_action('admin_post_evonee_export_csv', [$instance, 'handle_csv_export']);
     }
 
     public function enqueue_admin_assets($hook) {
@@ -95,13 +96,24 @@ class Evonee_Quote_Admin {
             'email_brand_name'         => 'Evonee',
             'email_footer_text'        => 'Evonee Promotional Products • sales@evonee.com',
             // Phase 3 Settings
+            'enable_google_sheets'     => '0',
+            'google_sheets_url'        => '',
             'enable_recaptcha'         => '0',
             'recaptcha_site_key'       => '',
             'recaptcha_secret_key'     => '',
             'enable_webhook'           => '0',
             'webhook_url'              => '',
+            'webhook_secret'           => '',
             'enable_slack'             => '0',
             'slack_webhook_url'        => '',
+            'enable_discord'           => '0',
+            'discord_webhook_url'      => '',
+            'enable_pdf_attachment'    => '1',
+            'enable_price_estimator'   => '1',
+            'base_quote_price'         => '50.00',
+            'price_per_item'           => '1.25',
+            'enable_woocommerce_button'=> '1',
+            'woo_button_text'          => 'Request a Quote',
             'enable_wc_quote_only'     => '0',
             'products_grid_limit'      => '12',
             'show_products_title'      => '0',
@@ -1081,8 +1093,12 @@ class Evonee_Quote_Admin {
                                 <p><strong>Timeframe:</strong> ${escapeHtml(row.timeframe)}</p>
                                 <p><strong>Specific Need Date:</strong> ${escapeHtml(row.specific_date || 'N/A')}</p>
                                 <p><strong>Submitted Date:</strong> ${escapeHtml(row.created_at)}</p>
+                                <p><strong>Estimated System Price:</strong> <strong style="color:#2563eb;">${row.estimated_total ? '$' + parseFloat(row.estimated_total).toFixed(2) : 'Under Review'}</strong></p>
                                 <p><strong>Quoted Price Offer:</strong> <strong style="color:#16a34a;">${row.quoted_price ? '$' + parseFloat(row.quoted_price).toFixed(2) : 'Not Set'}</strong></p>
                                 <p><strong>Current Status:</strong> <strong style="text-transform:uppercase; color:#6d28d9;">${escapeHtml(row.status || 'NEW')}</strong></p>
+                                <p style="margin-top: 10px;">
+                                    <a href="admin-ajax.php?action=eq_download_pdf&id=${row.id}" target="_blank" class="button button-secondary" style="background:#f1f5f9; border-color:#cbd5e1; color:#334155; font-weight:600;">📄 Download PDF Quote Sheet</a>
+                                </p>
                             </div>
                         </div>
 
@@ -1112,8 +1128,8 @@ class Evonee_Quote_Admin {
                     // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter
                     $all_email   = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}eq_email_log ORDER BY id DESC LIMIT 500");
                     ?>
-                    const allActivities = <?php echo json_encode($all_act ?: []); ?>;
-                    const allEmails     = <?php echo json_encode($all_email ?: []); ?>;
+                    const allActivities = <?php echo wp_json_encode($all_act ?: []); ?>;
+                    const allEmails     = <?php echo wp_json_encode($all_email ?: []); ?>;
 
                     const subActs = allActivities.filter(a => String(a.submission_id) === String(row.id));
                     const subEmails = allEmails.filter(e => String(e.submission_id) === String(row.id));
@@ -1307,16 +1323,36 @@ class Evonee_Quote_Admin {
      * Render Documentation & Help Admin Page
      */
     public function render_docs_page() {
+        $settings = self::get_settings();
         ?>
         <div class="wrap evonee-admin-wrap">
             <div class="evonee-docs-header">
                 <div>
-                    <h1>📖 Evonee Get Quote — Plugin Documentation & Help</h1>
-                    <p class="subtitle">Official setup guide, shortcode reference, responsive column customization, and developer hooks.</p>
+                    <h1>📖 Evonee Get Quote — Plugin Documentation & User Guide</h1>
+                    <p class="subtitle">Official setup guide, shortcode reference, Google Sheets tutorial, and developer hooks.</p>
                 </div>
                 <div class="evonee-docs-brand">
                     <span>Evonee v<?php echo esc_html(EVONEE_VERSION); ?></span>
                 </div>
+            </div>
+
+            <!-- SaaS Tab Navigation -->
+            <div class="eq-tabs-nav">
+                <button type="button" class="eq-tab-btn active" data-tab="doc-tab-overview">
+                    <span class="dashicons dashicons-welcome-widgets-menus"></span> Overview & Modules
+                </button>
+                <button type="button" class="eq-tab-btn" data-tab="doc-tab-shortcodes">
+                    <span class="dashicons dashicons-shortcode"></span> Shortcodes & Page Builders
+                </button>
+                <button type="button" class="eq-tab-btn" data-tab="doc-tab-gsheets">
+                    <span class="dashicons dashicons-spreadsheet"></span> Google Sheets Setup
+                </button>
+                <button type="button" class="eq-tab-btn" data-tab="doc-tab-integrations">
+                    <span class="dashicons dashicons-share-alt"></span> Webhooks & Slack
+                </button>
+                <button type="button" class="eq-tab-btn" data-tab="doc-tab-developer">
+                    <span class="dashicons dashicons-shield"></span> Security & Hooks
+                </button>
             </div>
 
             <!-- Docs Content Layout -->
@@ -1325,197 +1361,315 @@ class Evonee_Quote_Admin {
                 <!-- Main Content Column -->
                 <div class="evonee-docs-main">
                     
-                    <!-- Section 1: Quick Overview -->
-                    <div class="evonee-doc-card">
-                        <div class="evonee-card-header">
-                            <span class="dashicons dashicons-welcome-widgets-menus"></span>
-                            <h2>1. Quick Start & v2.0.0 Enterprise Overview</h2>
-                        </div>
-                        <div class="evonee-card-body">
-                            <p>The <strong>Evonee Get Quote Plugin (v2.0.0 Enterprise)</strong> provides a powerful B2B Lead Management & Custom Quote Automation System. It embeds a site-wide modal popup with a 6-step progress bar, instant price estimator, and CRM dashboard for managing customer quote requests.</p>
+                    <!-- TAB 1: OVERVIEW & MODULES -->
+                    <div id="doc-tab-overview" class="eq-tab-content active">
+                        <div class="evonee-doc-card">
+                            <div class="evonee-card-header">
+                                <span class="dashicons dashicons-welcome-widgets-menus"></span>
+                                <h2>1. Quick Start & v2.0.0 Enterprise Overview</h2>
+                            </div>
+                            <div class="evonee-card-body">
+                                <p>The <strong>Evonee Get Quote Plugin (v2.0.0 Enterprise)</strong> provides a powerful B2B Lead Management & Custom Quote Automation System. It embeds a site-wide modal popup with a 6-step progress bar, instant price estimator, and CRM dashboard for managing customer quote requests.</p>
 
-                            <div class="evonee-feature-box">
-                                <ul>
-                                    <li>⚡ <strong>8 Core Modules & 35+ Features:</strong> Full CRM pipeline, Email Builder, Analytics, Integrations, and UX tools.</li>
-                                    <li>🛡️ <strong>Advanced Security & Spam Shield:</strong> Google reCAPTCHA v3, Nonce verification, Honeypot bot protection, and IP rate-limiting.</li>
-                                    <li>📎 <strong>Multi-File Artwork Upload:</strong> Secure dropzone supporting up to 3 artwork files (AI, PDF, EPS, SVG, PNG, JPG) with SVG XSS sanitization.</li>
-                                    <li>💬 <strong>Customer Tokenized Quote Acceptance:</strong> Auto-generates 30-day expiring action links (Accept/Decline) inside email replies for 1-click customer approval.</li>
-                                    <li>🔗 <strong>Webhook, Zapier & Slack Automation:</strong> Automatically post lead payloads to Slack channels or CRM webhooks upon submission.</li>
-                                </ul>
+                                <div class="evonee-feature-box">
+                                    <ul>
+                                        <li>⚡ <strong>8 Core Modules & 35+ Features:</strong> Full CRM pipeline, Email Builder, Analytics, Integrations, and UX tools.</li>
+                                        <li>🛡️ <strong>Advanced Security & Spam Shield:</strong> Google reCAPTCHA v3, Nonce verification, Honeypot bot protection, and IP rate-limiting.</li>
+                                        <li>📎 <strong>Multi-File Artwork Upload:</strong> Secure dropzone supporting up to 3 artwork files (AI, PDF, EPS, SVG, PNG, JPG) with DOM-based SVG XSS sanitization.</li>
+                                        <li>💬 <strong>Customer Tokenized Quote Acceptance:</strong> Auto-generates 30-day expiring action links (Accept/Decline) inside email replies for 1-click customer approval.</li>
+                                        <li>🔗 <strong>Webhook, Zapier & Slack Automation:</strong> Automatically post lead payloads to Slack channels or CRM webhooks upon submission.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="evonee-doc-card">
+                            <div class="evonee-card-header">
+                                <span class="dashicons dashicons-admin-generic"></span>
+                                <h2>2. Complete v2.0 Module Guide</h2>
+                            </div>
+                            <div class="evonee-card-body">
+                                <table class="evonee-docs-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Module</th>
+                                            <th>Key Capabilities</th>
+                                            <th>Where to Configure</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><strong>📦 Module 1 — CRM</strong></td>
+                                            <td>Pagination, Internal Admin Notes, Follow-up Reminders, Activity Log Timeline, Column Sorting & Date Range Filters.</td>
+                                            <td><code>Evonee Quotes ➔ Submissions</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>✉️ Module 2 — Email</strong></td>
+                                            <td>Visual Branding Builder (Logo, Colors, Footer), Email Dispatch History Log, Quick Reply Templates (`{customer_name}`, `{product}`).</td>
+                                            <td><code>Evonee Quotes ➔ Settings</code> & ➔ <code>Email Log</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>💰 Module 3 — Pricing</strong></td>
+                                            <td>Quoted Price Entry in CRM, 1-Click Printable PDF Quote Sheet, Tokenized Customer Accept/Decline Email Buttons.</td>
+                                            <td><code>Submissions ➔ View Detail</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>📊 Module 4 — Analytics</strong></td>
+                                            <td>Chart.js Monthly Trends Bar Chart, Status Distribution Doughnut Chart, and Conversion Funnel Cards.</td>
+                                            <td><code>Evonee Quotes ➔ Analytics & Reports</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>🛒 Module 5 — WooCommerce</strong></td>
+                                            <td>Auto-detects WooCommerce products, shop loop auto-buttons, and "Quote-Only" Mode (hides Add to Cart).</td>
+                                            <td><code>Evonee Quotes ➔ Settings</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>🔗 Module 6 — Integrations</strong></td>
+                                            <td>Webhook URL endpoint (Zapier, Make, HubSpot), Google Sheets Real-Time Sync, and Slack Channel Notifications.</td>
+                                            <td><code>Evonee Quotes ➔ Settings</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>🛡️ Module 7 — Security & UX</strong></td>
+                                            <td>Google reCAPTCHA v3, Multi-file Upload (up to 3 files), DOM SVG XSS cleaning, Server max upload limit detection.</td>
+                                            <td><code>Evonee Quotes ➔ Settings</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>🎨 Module 8 — UI/UX</strong></td>
+                                            <td>Multi-step Gradient Progress Bar, Social Proof Badge ("⚡ X quotes today"), Floating WhatsApp Button, Branded PDF Logo.</td>
+                                            <td>Modal & PDF Sheet Header</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Section 2: Module Features Guide -->
-                    <div class="evonee-doc-card">
-                        <div class="evonee-card-header">
-                            <span class="dashicons dashicons-admin-generic"></span>
-                            <h2>2. Complete v2.0 Module Guide</h2>
-                        </div>
-                        <div class="evonee-card-body">
-                            <table class="evonee-docs-table">
-                                <thead>
-                                    <tr>
-                                        <th>Module</th>
-                                        <th>Key Capabilities</th>
-                                        <th>Where to Configure</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr>
-                                        <td><strong>📦 Module 1 — CRM</strong></td>
-                                        <td>Pagination, Internal Admin Notes, Follow-up Reminders, Activity Log Timeline, Column Sorting & Date Range Filters.</td>
-                                        <td><code>Evonee Quotes ➔ Submissions</code></td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>✉️ Module 2 — Email</strong></td>
-                                        <td>Visual Branding Builder (Logo, Colors, Footer), Email Dispatch History Log, Quick Reply Templates (`{customer_name}`, `{product}`).</td>
-                                        <td><code>Evonee Quotes ➔ Settings</code> & ➔ <code>Email Log</code></td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>💰 Module 3 — Pricing</strong></td>
-                                        <td>Quoted Price Entry in CRM, 1-Click Printable PDF Quote Sheet, Tokenized Customer Accept/Decline Email Buttons.</td>
-                                        <td><code>Submissions ➔ View Detail</code></td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>📊 Module 4 — Analytics</strong></td>
-                                        <td>Chart.js Monthly Trends Bar Chart, Status Distribution Doughnut Chart, and Conversion Funnel Cards.</td>
-                                        <td><code>Evonee Quotes ➔ Analytics & Reports</code></td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>🛒 Module 5 — WooCommerce</strong></td>
-                                        <td>Auto-detects WooCommerce products, shop loop auto-buttons, and "Quote-Only" Mode (hides Add to Cart).</td>
-                                        <td><code>Evonee Quotes ➔ Settings</code></td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>🔗 Module 6 — Integrations</strong></td>
-                                        <td>Webhook URL endpoint (Zapier, Make, HubSpot) and Instant Slack Channel Lead Notifications.</td>
-                                        <td><code>Evonee Quotes ➔ Settings (Section 6)</code></td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>🛡️ Module 7 — Security & UX</strong></td>
-                                        <td>Google reCAPTCHA v3, Multi-file Upload (up to 3 files), LocalStorage Form Draft Auto-Resume.</td>
-                                        <td><code>Evonee Quotes ➔ Settings</code></td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>🎨 Module 8 — UI/UX</strong></td>
-                                        <td>Multi-step Gradient Progress Bar, Social Proof Badge ("⚡ X quotes today"), Floating WhatsApp Button, Branded PDF Logo.</td>
-                                        <td>Modal & PDF Sheet Header</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- Section 3: Elementor & Shortcode Usage -->
-                    <div class="evonee-doc-card">
-                        <div class="evonee-card-header">
-                            <span class="dashicons dashicons-shortcode"></span>
-                            <h2>3. Elementor & Shortcode Usage</h2>
-                        </div>
-                        <div class="evonee-card-body">
-                            <p>Use the shortcode <code>[evonee_products]</code> inside Elementor's <strong>Shortcode Widget</strong> or any page builder to render the popular products grid.</p>
-
-                            <h3>Primary Shortcode:</h3>
-                            <div class="evonee-code-snippet">
-                                <code>[evonee_products]</code>
-                                <button type="button" class="evonee-copy-code" data-code="[evonee_products]">Copy</button>
+                    <!-- TAB 2: SHORTCODES & PAGE BUILDERS -->
+                    <div id="doc-tab-shortcodes" class="eq-tab-content">
+                        <div class="evonee-doc-card">
+                            <div class="evonee-card-header">
+                                <span class="dashicons dashicons-shortcode"></span>
+                                <h2>1. Elementor & Shortcode Usage</h2>
                             </div>
+                            <div class="evonee-card-body">
+                                <p>Use the shortcode <code>[evonee_products]</code> inside Elementor's <strong>Shortcode Widget</strong> or any page builder to render the popular products grid.</p>
 
-                            <h3>Shortcode Parameters Reference:</h3>
-                            <table class="evonee-docs-table">
-                                <thead>
-                                    <tr>
-                                        <th>Attribute</th>
-                                        <th>Default</th>
-                                        <th>Options / Format</th>
-                                        <th>Description</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr>
-                                        <td><code>cols</code> / <code>columns</code></td>
-                                        <td><code>6</code></td>
-                                        <td><code>1</code> to <code>6</code></td>
-                                        <td>Number of product columns to display on Desktop viewports.</td>
-                                    </tr>
-                                    <tr>
-                                        <td><code>cols_tablet</code></td>
-                                        <td><code>3</code></td>
-                                        <td><code>1</code> to <code>4</code></td>
-                                        <td>Number of product columns to display on Tablet viewports.</td>
-                                    </tr>
-                                    <tr>
-                                        <td><code>cols_mobile</code></td>
-                                        <td><code>2</code></td>
-                                        <td><code>1</code>, <code>2</code></td>
-                                        <td>Number of product columns to display on Mobile viewports.</td>
-                                    </tr>
-                                    <tr>
-                                        <td><code>gap</code></td>
-                                        <td><code>18px</code></td>
-                                        <td>e.g. <code>12px</code>, <code>20px</code></td>
-                                        <td>Whitespace gap between product cards.</td>
-                                    </tr>
-                                    <tr>
-                                        <td><code>img_height</code></td>
-                                        <td><code>140px</code></td>
-                                        <td>e.g. <code>140px</code>, <code>180px</code></td>
-                                        <td>Thumbnail container height for uniform image alignment.</td>
-                                    </tr>
-                                    <tr>
-                                        <td><code>limit</code></td>
-                                        <td>Settings value (default <code>12</code>)</td>
-                                        <td>e.g. <code>8</code>, <code>12</code>, <code>0</code></td>
-                                        <td>Maximum number of products to show. <code>0</code> displays all. Overrides the Settings option.</td>
-                                    </tr>
-                                    <tr>
-                                        <td><code>show_title</code></td>
-                                        <td><code>no</code></td>
-                                        <td><code>yes</code> / <code>no</code></td>
-                                        <td>Show the grid heading. Off by default.</td>
-                                    </tr>
-                                    <tr>
-                                        <td><code>title</code></td>
-                                        <td><code>Popular Products</code></td>
-                                        <td>Any text</td>
-                                        <td>Header title text (only if <code>show_title="yes"</code>).</td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                                <h3>Primary Shortcode:</h3>
+                                <div class="evonee-code-snippet">
+                                    <code>[evonee_products]</code>
+                                    <button type="button" class="evonee-copy-code" data-code="[evonee_products]">Copy</button>
+                                </div>
 
-                            <h3>Examples:</h3>
-                            <div class="evonee-code-snippet">
-                                <code>[evonee_products cols="6" cols_tablet="3" cols_mobile="2"]</code>
-                                <button type="button" class="evonee-copy-code" data-code='[evonee_products cols="6" cols_tablet="3" cols_mobile="2"]'>Copy</button>
-                            </div>
-                            <div class="evonee-code-snippet">
-                                <code>[evonee_quote_button product="Silicone Wristband" text="Get Free Quote"]</code>
-                                <button type="button" class="evonee-copy-code" data-code='[evonee_quote_button product="Silicone Wristband" text="Get Free Quote"]'>Copy</button>
+                                <h3>Shortcode Parameters Reference:</h3>
+                                <table class="evonee-docs-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Attribute</th>
+                                            <th>Default</th>
+                                            <th>Options / Format</th>
+                                            <th>Description</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><code>cols</code> / <code>columns</code></td>
+                                            <td><code>6</code></td>
+                                            <td><code>1</code> to <code>6</code></td>
+                                            <td>Number of product columns to display on Desktop viewports.</td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>cols_tablet</code></td>
+                                            <td><code>3</code></td>
+                                            <td><code>1</code> to <code>4</code></td>
+                                            <td>Number of product columns to display on Tablet viewports.</td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>cols_mobile</code></td>
+                                            <td><code>2</code></td>
+                                            <td><code>1</code>, <code>2</code></td>
+                                            <td>Number of product columns to display on Mobile viewports.</td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>gap</code></td>
+                                            <td><code>18px</code></td>
+                                            <td>e.g. <code>12px</code>, <code>20px</code></td>
+                                            <td>Whitespace gap between product cards.</td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>img_height</code></td>
+                                            <td><code>140px</code></td>
+                                            <td>e.g. <code>140px</code>, <code>180px</code></td>
+                                            <td>Thumbnail container height for uniform image alignment.</td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>limit</code></td>
+                                            <td>Settings value (default <code>12</code>)</td>
+                                            <td>e.g. <code>8</code>, <code>12</code>, <code>0</code></td>
+                                            <td>Maximum number of products to show. <code>0</code> displays all. Overrides Settings.</td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>show_title</code></td>
+                                            <td><code>no</code></td>
+                                            <td><code>yes</code> / <code>no</code></td>
+                                            <td>Show the grid heading. Off by default.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+
+                                <h3>Examples & Usage:</h3>
+                                <div class="evonee-code-snippet">
+                                    <code>[evonee_products cols="6" cols_tablet="3" cols_mobile="2"]</code>
+                                    <button type="button" class="evonee-copy-code" data-code='[evonee_products cols="6" cols_tablet="3" cols_mobile="2"]'>Copy</button>
+                                </div>
+                                <div class="evonee-code-snippet">
+                                    <code>[evonee_quote_button product="Silicone Wristband" text="Get Free Quote"]</code>
+                                    <button type="button" class="evonee-copy-code" data-code='[evonee_quote_button product="Silicone Wristband" text="Get Free Quote"]'>Copy</button>
+                                </div>
+
+                                <div style="background:#f1f5f9; padding:14px; border-radius:8px; margin-top:16px;">
+                                    <strong style="color:#1e293b; display:block; margin-bottom:4px;">💡 Trigger Modal from Any Custom HTML Element:</strong>
+                                    <p style="margin:0; font-size:13px; color:#475569;">Add class <code>eq-open-modal</code> to any button or link. Pass optional <code>data-product="Custom Item"</code> and <code>data-image="URL"</code> to pre-fill the popup modal automatically!</p>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Section 4: Webhook & Slack Integrations -->
-                    <div class="evonee-doc-card">
-                        <div class="evonee-card-header">
-                            <span class="dashicons dashicons-share-alt"></span>
-                            <h2>4. Webhook, Zapier & Slack Configuration</h2>
+                    <!-- TAB 3: GOOGLE SHEETS SETUP -->
+                    <div id="doc-tab-gsheets" class="eq-tab-content">
+                        <div class="evonee-doc-card">
+                            <div class="evonee-card-header">
+                                <span class="dashicons dashicons-spreadsheet"></span>
+                                <h2>📊 Direct Google Sheets Real-Time Auto-Sync Setup</h2>
+                            </div>
+                            <div class="evonee-card-body">
+                                <p>Sync all customer quote leads directly to your Google Spreadsheet in real-time:</p>
+                                
+                                <ol style="margin-left:20px; line-height:1.7; color:#334155;">
+                                    <li>Open your <a href="https://sheets.google.com" target="_blank" style="color:#6d28d9; font-weight:bold;">Google Sheets</a> &rarr; <strong>Extensions &rarr; Apps Script</strong>.</li>
+                                    <li>Replace any existing code with the snippet below:</li>
+                                </ol>
+
+                                <div class="evonee-code-snippet" style="flex-direction:column; align-items:flex-start; gap:10px;">
+                                    <div style="display:flex; justify-content:space-between; width:100%;">
+                                        <strong style="color:#38bdf8;">Google Apps Script Code Snippet:</strong>
+                                        <button type="button" class="evonee-copy-code" data-code='function doPost(e) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var d = JSON.parse(e.postData.contents);
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(["ID", "Date", "Name", "Company", "Email", "Phone", "Country", "Product", "Qty", "Details", "Artwork", "Timeframe", "Specific Date", "ZIP", "Notes", "Status"]);
+    }
+    sheet.appendRow([d.submission_id, d.created_at, d.full_name, d.company, d.email, d.phone, d.country, d.product, d.quantity, d.product_details, d.artwork_urls, d.timeframe, d.specific_date, d.zip_code, d.project_notes, d.status]);
+    return ContentService.createTextOutput(JSON.stringify({"result":"success"})).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({"result":"error", "error":err.toString()})).setMimeType(ContentService.MimeType.JSON);
+  }
+}'>Copy Code</button>
+                                    </div>
+                                    <pre style="margin:0; font-size:12px; color:#f8fafc; overflow-x:auto; width:100%;">function doPost(e) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var d = JSON.parse(e.postData.contents);
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(["ID", "Date", "Name", "Company", "Email", "Phone", "Country", "Product", "Qty", "Details", "Artwork", "Timeframe", "Specific Date", "ZIP", "Notes", "Status"]);
+    }
+    sheet.appendRow([d.submission_id, d.created_at, d.full_name, d.company, d.email, d.phone, d.country, d.product, d.quantity, d.product_details, d.artwork_urls, d.timeframe, d.specific_date, d.zip_code, d.project_notes, d.status]);
+    return ContentService.createTextOutput(JSON.stringify({"result":"success"})).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({"result":"error", "error":err.toString()})).setMimeType(ContentService.MimeType.JSON);
+  }
+}</pre>
+                                </div>
+
+                                <ol start="3" style="margin-left:20px; line-height:1.7; color:#334155;">
+                                    <li>Click <strong>Deploy &rarr; New deployment &rarr; Select Web app</strong>.</li>
+                                    <li>Set <strong>Execute as:</strong> <code>Me</code> and <strong>Who has access:</strong> <code>Anyone</code>.</li>
+                                    <li>Click <strong>Deploy</strong>, copy the Web App URL, and paste it under <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-settings#tab-integrations')); ?>" style="color:#6d28d9; font-weight:bold;">Settings & Modules (Integrations Tab)</a>!</li>
+                                </ol>
+                            </div>
                         </div>
-                        <div class="evonee-card-body">
-                            <p><strong>Zapier / Make / HubSpot Webhooks:</strong> Navigate to <code>Evonee Quotes ➔ Settings ➔ Section 6</code>, enable Webhooks, and paste your Target Catch Webhook URL. The plugin sends the following JSON payload on submission:</p>
-                            <pre class="evonee-pre-block">{
-  "quote_id": 42,
+                    </div>
+
+                    <!-- TAB 4: WEBHOOKS & INTEGRATIONS -->
+                    <div id="doc-tab-integrations" class="eq-tab-content">
+                        <div class="evonee-doc-card">
+                            <div class="evonee-card-header">
+                                <span class="dashicons dashicons-share-alt"></span>
+                                <h2>Webhook, Zapier & Slack Configuration</h2>
+                            </div>
+                            <div class="evonee-card-body">
+                                <p><strong>Zapier / Make / HubSpot Webhooks:</strong> Navigate to <code>Evonee Quotes ➔ Settings ➔ Integrations Tab</code>, enable Webhooks, and paste your Target Catch Webhook URL. The plugin sends the following JSON payload on submission:</p>
+                                
+                                <div class="evonee-code-snippet" style="flex-direction:column; align-items:flex-start; gap:10px;">
+                                    <div style="display:flex; justify-content:space-between; width:100%;">
+                                        <strong style="color:#38bdf8;">Sample Webhook JSON Payload:</strong>
+                                        <button type="button" class="evonee-copy-code" data-code='{
+  "submission_id": 42,
+  "created_at": "2026-09-09 22:30:00",
   "full_name": "John Doe",
+  "company": "Acme Corp",
   "email": "john@example.com",
   "phone": "+1 555-0199",
+  "country": "United States",
   "product": "Silicone Wristband",
   "quantity": "500",
+  "product_details": {"wristband_type":"1/2 Inch","color":"#6d28d9"},
+  "artwork_urls": ["https://site.com/uploads/evonee-quotes/2026/09/logo.pdf"],
+  "timeframe": "10-12 Business Days",
+  "zip_code": "10001",
+  "project_notes": "Urgent campaign delivery needed.",
+  "status": "new"
+}'>Copy JSON</button>
+                                    </div>
+                                    <pre style="margin:0; font-size:12px; color:#f8fafc; overflow-x:auto; width:100%;">{
+  "submission_id": 42,
+  "created_at": "2026-09-09 22:30:00",
+  "full_name": "John Doe",
+  "company": "Acme Corp",
+  "email": "john@example.com",
+  "phone": "+1 555-0199",
   "country": "United States",
-  "submitted_at": "2026-08-20 11:30:00"
+  "product": "Silicone Wristband",
+  "quantity": "500",
+  "product_details": {"wristband_type":"1/2 Inch","color":"#6d28d9"},
+  "artwork_urls": ["https://site.com/uploads/evonee-quotes/2026/09/logo.pdf"],
+  "timeframe": "10-12 Business Days",
+  "zip_code": "10001",
+  "project_notes": "Urgent campaign delivery needed.",
+  "status": "new"
 }</pre>
+                                </div>
 
-                            <p><strong>Slack Incoming Webhook:</strong> Paste your Slack Webhook URL in Settings. Every new lead instantly posts a rich card to your sales channel.</p>
+                                <p style="margin-top:16px;"><strong>Slack Incoming Webhook:</strong> Paste your Slack Webhook URL in Settings. Every new lead instantly posts a formatted lead notification to your sales team channel.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 5: SECURITY & DEVELOPER HOOKS -->
+                    <div id="doc-tab-developer" class="eq-tab-content">
+                        <div class="evonee-doc-card">
+                            <div class="evonee-card-header">
+                                <span class="dashicons dashicons-shield"></span>
+                                <h2>Security Architecture & Developer Action Hooks</h2>
+                            </div>
+                            <div class="evonee-card-body">
+                                <h3>🛡️ Multi-Layer Security Architecture:</h3>
+                                <ul>
+                                    <li><strong>DOM-based SVG XSS Protection:</strong> SVG files are parsed using PHP <code>DOMDocument</code> XML parser with <code>LIBXML_NONET</code>. Script tags, dangerous nodes, inline <code>on*</code> attributes, and <code>javascript:</code> URIs are automatically stripped.</li>
+                                    <li><strong>Google reCAPTCHA v3:</strong> Invisible spam bot protection score evaluation (< 0.5 score rejection).</li>
+                                    <li><strong>Honeypot & Rate Limiting:</strong> Silent honeypot field catches automated bots. Transient IP rate limiter caps requests at 5 per 15 minutes per IP.</li>
+                                </ul>
+
+                                <h3 style="margin-top:20px;">🛠️ Developer PHP Action & Filter Hooks:</h3>
+                                <div class="evonee-code-snippet">
+                                    <code>add_action('evonee_quote_form_custom_fields', function() { /* Custom Inputs */ });</code>
+                                    <button type="button" class="evonee-copy-code" data-code="add_action('evonee_quote_form_custom_fields', function() { echo '&lt;div class=&quot;eq-field&quot;&gt;&lt;label&gt;Event Name&lt;/label&gt;&lt;input type=&quot;text&quot; name=&quot;event_name&quot;&gt;&lt;/div&gt;'; });">Copy</button>
+                                </div>
+                                <div class="evonee-code-snippet">
+                                    <code>add_filter('evonee_notification_recipient', function($recipients) { return array_merge($recipients, ['manager@site.com']); });</code>
+                                    <button type="button" class="evonee-copy-code" data-code="add_filter('evonee_notification_recipient', function($recipients) { return array_merge($recipients, ['manager@site.com']); });">Copy</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -1537,13 +1691,13 @@ class Evonee_Quote_Admin {
                         <h3>📁 Upload Safety</h3>
                         <p>Uploaded artwork files are saved securely in:</p>
                         <code>wp-content/uploads/evonee-quotes/YYYY/MM/</code>
-                        <p><small>Supports up to 3 files: AI, PDF, EPS, SVG, PNG, JPG (Max 20MB per file).</small></p>
+                        <p><small>Supports up to 3 files: AI, PDF, EPS, SVG, PNG, JPG (Max <?php echo esc_html(size_format(wp_max_upload_size())); ?>).</small></p>
                     </div>
 
-                    <div class="evonee-sidebar-card">
-                        <h3>💬 Need Support or Customization?</h3>
+                    <div class="evonee-sidebar-card" style="background:#faf5ff; border-color:#e9d5ff;">
+                        <h3 style="color:#6d28d9;">💬 Need Support or Customization?</h3>
                         <p>Evonee v2.0 Enterprise Plugin Documentation & Support.</p>
-                        <a href="mailto:sales@evonee.com" class="button button-primary" style="width:100%; text-align:center; background:#6d28d9; border-color:#6d28d9;">Contact Developer Team</a>
+                        <a href="mailto:sales@evonee.com" class="button button-primary" style="width:100%; text-align:center; background:#6d28d9; border-color:#6d28d9; font-weight:700;">Contact Developer Team</a>
                     </div>
 
                 </div>
@@ -1553,6 +1707,46 @@ class Evonee_Quote_Admin {
 
         <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Tab switcher logic
+            const tabBtns = document.querySelectorAll('.eq-tab-btn');
+            const tabContents = document.querySelectorAll('.eq-tab-content');
+
+            function switchTab(targetId) {
+                tabBtns.forEach(btn => {
+                    if (btn.getAttribute('data-tab') === targetId) {
+                        btn.classList.add('active');
+                    } else {
+                        btn.classList.remove('active');
+                    }
+                });
+                tabContents.forEach(content => {
+                    if (content.id === targetId) {
+                        content.classList.add('active');
+                    } else {
+                        content.classList.remove('active');
+                    }
+                });
+                if (history.replaceState) {
+                    history.replaceState(null, null, '#' + targetId);
+                } else {
+                    window.location.hash = targetId;
+                }
+            }
+
+            tabBtns.forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    switchTab(this.getAttribute('data-tab'));
+                });
+            });
+
+            // Restore active tab from hash
+            const currentHash = window.location.hash ? window.location.hash.replace('#', '') : '';
+            if (currentHash && document.getElementById(currentHash)) {
+                switchTab(currentHash);
+            }
+
+            // Copy button logic
             function copyToClipboard(text) {
                 if (navigator.clipboard && window.isSecureContext) {
                     return navigator.clipboard.writeText(text);
@@ -1604,7 +1798,7 @@ class Evonee_Quote_Admin {
                     }, 1500);
                 }).catch(err => {
                     console.error('Copy error:', err);
-                    prompt('Copy shortcode:', code);
+                    prompt('Copy code:', code);
                 });
             });
         });
@@ -1781,8 +1975,8 @@ class Evonee_Quote_Admin {
                 // Monthly Trend Chart
                 const monthlyCtx = document.getElementById('monthlyTrendChart');
                 if (monthlyCtx) {
-                    const monthLabels = <?php echo json_encode(array_column($monthly_trends, 'month_label') ?: ['Current Month']); ?>;
-                    const monthTotals = <?php echo json_encode(array_map('intval', array_column($monthly_trends, 'total')) ?: [$total_submissions]); ?>;
+                    const monthLabels = <?php echo wp_json_encode(array_column($monthly_trends, 'month_label') ?: ['Current Month']); ?>;
+                    const monthTotals = <?php echo wp_json_encode(array_map('intval', array_column($monthly_trends, 'total')) ?: [$total_submissions]); ?>;
 
                     new Chart(monthlyCtx, {
                         type: 'bar',
@@ -1895,13 +2089,24 @@ class Evonee_Quote_Admin {
                 'show_field_specific_date' => isset($_POST['show_field_specific_date']) ? '1' : '0',
                 'show_field_project_notes' => isset($_POST['show_field_project_notes']) ? '1' : '0',
                 // Phase 3 Settings
+                'enable_google_sheets'     => isset($_POST['enable_google_sheets']) ? '1' : '0',
+                'google_sheets_url'        => sanitize_text_field(wp_unslash($_POST['google_sheets_url'] ?? '')),
                 'enable_recaptcha'         => isset($_POST['enable_recaptcha']) ? '1' : '0',
                 'recaptcha_site_key'       => sanitize_text_field(wp_unslash($_POST['recaptcha_site_key'] ?? '')),
                 'recaptcha_secret_key'     => sanitize_text_field(wp_unslash($_POST['recaptcha_secret_key'] ?? '')),
                 'enable_webhook'           => isset($_POST['enable_webhook']) ? '1' : '0',
                 'webhook_url'              => sanitize_text_field(wp_unslash($_POST['webhook_url'] ?? '')),
+                'webhook_secret'           => sanitize_text_field(wp_unslash($_POST['webhook_secret'] ?? '')),
                 'enable_slack'             => isset($_POST['enable_slack']) ? '1' : '0',
                 'slack_webhook_url'        => sanitize_text_field(wp_unslash($_POST['slack_webhook_url'] ?? '')),
+                'enable_discord'           => isset($_POST['enable_discord']) ? '1' : '0',
+                'discord_webhook_url'      => sanitize_text_field(wp_unslash($_POST['discord_webhook_url'] ?? '')),
+                'enable_pdf_attachment'    => isset($_POST['enable_pdf_attachment']) ? '1' : '0',
+                'enable_price_estimator'   => isset($_POST['enable_price_estimator']) ? '1' : '0',
+                'base_quote_price'         => floatval($_POST['base_quote_price'] ?? 50.00),
+                'price_per_item'           => floatval($_POST['price_per_item'] ?? 1.25),
+                'enable_woocommerce_button'=> isset($_POST['enable_woocommerce_button']) ? '1' : '0',
+                'woo_button_text'          => sanitize_text_field(wp_unslash($_POST['woo_button_text'] ?? 'Request a Quote')),
                 'enable_wc_quote_only'     => isset($_POST['enable_wc_quote_only']) ? '1' : '0',
                 'email_logo_url'           => esc_url_raw(wp_unslash($_POST['email_logo_url'] ?? '')),
                 'email_header_color'       => sanitize_hex_color(wp_unslash($_POST['email_header_color'] ?? '')) ?: '#6d28d9',
@@ -1974,16 +2179,37 @@ class Evonee_Quote_Admin {
                 <?php wp_nonce_field('eq_save_settings_nonce'); ?>
                 <input type="hidden" name="eq_save_settings" value="1">
 
+                <input type="hidden" name="eq_active_tab" id="eq_active_tab" value="tab-modules">
+
+                <!-- SaaS Tab Navigation -->
+                <div class="eq-tabs-nav">
+                    <button type="button" class="eq-tab-btn active" data-tab="tab-modules">
+                        <span class="dashicons dashicons-admin-settings"></span> Modules & Form Fields
+                    </button>
+                    <button type="button" class="eq-tab-btn" data-tab="tab-builder">
+                        <span class="dashicons dashicons-plus-alt2"></span> Custom Field Builder
+                    </button>
+                    <button type="button" class="eq-tab-btn" data-tab="tab-email">
+                        <span class="dashicons dashicons-email-alt"></span> Email & Branding
+                    </button>
+                    <button type="button" class="eq-tab-btn" data-tab="tab-integrations">
+                        <span class="dashicons dashicons-share"></span> Integrations & Security
+                    </button>
+                </div>
+
                 <div class="evonee-docs-grid" style="grid-template-columns: 1fr;">
                     <div class="evonee-docs-main">
 
-                        <!-- Module Toggles Card -->
-                        <div class="evonee-doc-card">
-                            <div class="evonee-card-header">
-                                <span class="dashicons dashicons-admin-settings"></span>
-                                <h2>1. Module Feature Toggles (ON / OFF)</h2>
-                            </div>
-                            <div class="evonee-card-body">
+                        <!-- TAB 1: MODULES & FORM FIELDS -->
+                        <div id="tab-modules" class="eq-tab-content active">
+
+                            <!-- Module Toggles Card -->
+                            <div class="evonee-doc-card">
+                                <div class="evonee-card-header">
+                                    <span class="dashicons dashicons-admin-settings"></span>
+                                    <h2>1. Module Feature Toggles (ON / OFF)</h2>
+                                </div>
+                                <div class="evonee-card-body">
                                 
                                 <div class="evonee-setting-row">
                                     <div class="evonee-setting-info">
@@ -2106,15 +2332,17 @@ class Evonee_Quote_Admin {
                                     </label>
                                 </div>
 
+                                </div>
                             </div>
-                        </div>
+                        </div> <!-- End #tab-modules -->
 
-                        <!-- Visual Custom Field Builder Card -->
-                        <div class="evonee-doc-card" style="margin-top: 20px;">
-                            <div class="evonee-card-header">
-                                <span class="dashicons dashicons-plus-alt2"></span>
-                                <h2>3. 🎨 Visual Custom Field Builder (No-Code)</h2>
-                            </div>
+                        <!-- TAB 2: CUSTOM FIELD BUILDER -->
+                        <div id="tab-builder" class="eq-tab-content">
+                            <div class="evonee-doc-card">
+                                <div class="evonee-card-header">
+                                    <span class="dashicons dashicons-plus-alt2"></span>
+                                    <h2>2. 🎨 Visual Custom Field Builder (No-Code)</h2>
+                                </div>
                             <div class="evonee-card-body">
                                 <p style="color:#64748b; font-size:13px; margin-top:0;">Add custom fields to the Get Quote popup modal without writing code. Fields render automatically in the form and save to customer submissions.</p>
 
@@ -2158,13 +2386,16 @@ class Evonee_Quote_Admin {
                                 <button type="button" id="eq-add-custom-field-btn" class="button button-secondary" style="margin-top:6px;">➕ Add Custom Field</button>
                             </div>
                         </div>
+                        </div> <!-- End #tab-builder -->
 
-                        <!-- General Configuration Card -->
-                        <div class="evonee-doc-card" style="margin-top: 20px;">
-                            <div class="evonee-card-header">
-                                <span class="dashicons dashicons-email-alt"></span>
-                                <h2>4. General Email & Pricing Configuration</h2>
-                            </div>
+                        <!-- TAB 3: EMAIL & BRANDING -->
+                        <div id="tab-email" class="eq-tab-content">
+                            <!-- General Configuration Card -->
+                            <div class="evonee-doc-card">
+                                <div class="evonee-card-header">
+                                    <span class="dashicons dashicons-email-alt"></span>
+                                    <h2>3. General Email & Pricing Configuration</h2>
+                                </div>
                             <div class="evonee-card-body">
                                 
                                 <div style="margin-bottom: 16px;">
@@ -2276,15 +2507,37 @@ class Evonee_Quote_Admin {
                                 <button type="button" id="eq-add-reply-template-btn" class="button button-secondary">+ Add New Template</button>
                             </div>
                         </div>
+                        </div> <!-- End #tab-email -->
 
-                        <!-- Security & Integrations Card (Phase 3) -->
-                        <div class="evonee-doc-card" style="margin-top:20px;">
-                            <div class="evonee-card-header">
-                                <span class="dashicons dashicons-shield"></span>
-                                <h2>6. Security & Integrations (reCAPTCHA v3, Webhooks & Slack)</h2>
-                            </div>
+                        <!-- TAB 4: INTEGRATIONS & SECURITY -->
+                        <div id="tab-integrations" class="eq-tab-content">
+                            <!-- Security & Integrations Card (Phase 3) -->
+                            <div class="evonee-doc-card">
+                                <div class="evonee-card-header">
+                                    <span class="dashicons dashicons-shield"></span>
+                                    <h2>4. Security & Integrations (Google Sheets, reCAPTCHA v3, Webhooks & Slack)</h2>
+                                </div>
                             <div class="evonee-card-body">
                                 
+                                <!-- Google Sheets Sync -->
+                                <div style="margin-bottom:20px; border-bottom:1px solid #e2e8f0; padding-bottom:16px;">
+                                    <div class="evonee-setting-row" style="margin-bottom:10px;">
+                                        <div class="evonee-setting-info">
+                                            <strong>📊 Direct Google Sheets Auto-Sync</strong>
+                                            <p>Automatically push every incoming client quote lead directly to your Google Spreadsheet in real-time!</p>
+                                        </div>
+                                        <label class="evonee-toggle">
+                                            <input type="checkbox" name="enable_google_sheets" value="1" <?php checked(isset($settings['enable_google_sheets']) ? $settings['enable_google_sheets'] : '0', '1'); ?>>
+                                            <span class="evonee-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div>
+                                        <label style="font-size:11px; font-weight:700; color:#64748b; display:block; margin-bottom:2px;">Google Sheets Webhook URL:</label>
+                                        <input type="url" name="google_sheets_url" value="<?php echo esc_attr(isset($settings['google_sheets_url']) ? $settings['google_sheets_url'] : ''); ?>" class="widefat" placeholder="https://script.google.com/macros/s/AKfycb.../exec">
+                                        <p class="description" style="margin-top:4px;">Paste your Google Apps Script Webhook URL. <a href="#" onclick="alert('Google Sheets 1-Minute Setup Guide:\n\n1. Open your Google Sheet -> Extensions -> Apps Script.\n2. Paste this code:\n\nfunction doPost(e) {\n  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();\n  var d = JSON.parse(e.postData.contents);\n  if (sheet.getLastRow() === 0) {\n    sheet.appendRow([\"ID\", \"Date\", \"Name\", \"Company\", \"Email\", \"Phone\", \"Country\", \"Product\", \"Qty\", \"Details\", \"Artwork\", \"Timeframe\", \"Specific Date\", \"ZIP\", \"Notes\", \"Status\"]);\n  }\n  sheet.appendRow([d.submission_id, d.created_at, d.full_name, d.company, d.email, d.phone, d.country, d.product, d.quantity, d.product_details, d.artwork_urls, d.timeframe, d.specific_date, d.zip_code, d.project_notes, d.status]);\n  return ContentService.createTextOutput(JSON.stringify({\"result\":\"success\"})).setMimeType(ContentService.MimeType.JSON);\n}\n\n3. Click Deploy -> New deployment -> Select Web app -> Execute as: Me -> Who has access: Anyone -> Deploy!'); return false;" style="color:#6d28d9; font-weight:bold;">📖 Click for 1-Minute Setup Instructions & Apps Script Code</a></p>
+                                    </div>
+                                </div>
+
                                 <!-- reCAPTCHA v3 -->
                                 <div style="margin-bottom:20px; border-bottom:1px solid #e2e8f0; padding-bottom:16px;">
                                     <div class="evonee-setting-row" style="margin-bottom:10px;">
@@ -2309,26 +2562,32 @@ class Evonee_Quote_Admin {
                                     </div>
                                 </div>
 
-                                <!-- Webhook / Zapier -->
+                                 <!-- Webhook / Zapier -->
                                 <div style="margin-bottom:20px; border-bottom:1px solid #e2e8f0; padding-bottom:16px;">
                                     <div class="evonee-setting-row" style="margin-bottom:10px;">
                                         <div class="evonee-setting-info">
-                                            <strong>🔗 Webhook / Zapier Integration</strong>
-                                            <p>Automatically send a JSON POST request payload to external services (Zapier, Make, HubSpot) when a quote is submitted.</p>
+                                            <strong>🔗 Outgoing CRM Webhook (Zapier / Make / HubSpot)</strong>
+                                            <p>Automatically send a JSON POST request payload with optional HMAC SHA256 signature when a quote is submitted.</p>
                                         </div>
                                         <label class="evonee-toggle">
                                             <input type="checkbox" name="enable_webhook" value="1" <?php checked($settings['enable_webhook'], '1'); ?>>
                                             <span class="evonee-slider"></span>
                                         </label>
                                     </div>
-                                    <div>
-                                        <label style="font-size:11px; font-weight:700; color:#64748b; display:block; margin-bottom:2px;">Webhook Target URL:</label>
-                                        <input type="url" name="webhook_url" value="<?php echo esc_attr($settings['webhook_url']); ?>" class="widefat" placeholder="https://hooks.zapier.com/hooks/catch/...">
+                                    <div style="display:grid; grid-template-columns: 2fr 1fr; gap: 12px;">
+                                        <div>
+                                            <label style="font-size:11px; font-weight:700; color:#64748b; display:block; margin-bottom:2px;">Webhook Target URL:</label>
+                                            <input type="url" name="webhook_url" value="<?php echo esc_attr($settings['webhook_url']); ?>" class="widefat" placeholder="https://hooks.zapier.com/hooks/catch/...">
+                                        </div>
+                                        <div>
+                                            <label style="font-size:11px; font-weight:700; color:#64748b; display:block; margin-bottom:2px;">HMAC Secret Key (Optional):</label>
+                                            <input type="text" name="webhook_secret" value="<?php echo esc_attr($settings['webhook_secret'] ?? ''); ?>" class="widefat" placeholder="Secret Key for X-Evonee-Signature">
+                                        </div>
                                     </div>
                                 </div>
 
                                 <!-- Slack Notification -->
-                                <div>
+                                <div style="margin-bottom:20px; border-bottom:1px solid #e2e8f0; padding-bottom:16px;">
                                     <div class="evonee-setting-row" style="margin-bottom:10px;">
                                         <div class="evonee-setting-info">
                                             <strong>💬 Slack Channel Notifications</strong>
@@ -2345,20 +2604,97 @@ class Evonee_Quote_Admin {
                                     </div>
                                 </div>
 
+                                <!-- Discord Notification -->
+                                <div style="margin-bottom:20px; border-bottom:1px solid #e2e8f0; padding-bottom:16px;">
+                                    <div class="evonee-setting-row" style="margin-bottom:10px;">
+                                        <div class="evonee-setting-info">
+                                            <strong>🎮 Discord Server Notifications</strong>
+                                            <p>Send styled embed alert cards to your sales Discord channel in real-time.</p>
+                                        </div>
+                                        <label class="evonee-toggle">
+                                            <input type="checkbox" name="enable_discord" value="1" <?php checked(isset($settings['enable_discord']) ? $settings['enable_discord'] : '0', '1'); ?>>
+                                            <span class="evonee-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div>
+                                        <label style="font-size:11px; font-weight:700; color:#64748b; display:block; margin-bottom:2px;">Discord Webhook URL:</label>
+                                        <input type="url" name="discord_webhook_url" value="<?php echo esc_attr(isset($settings['discord_webhook_url']) ? $settings['discord_webhook_url'] : ''); ?>" class="widefat" placeholder="https://discord.com/api/webhooks/...">
+                                    </div>
+                                </div>
+
+                                <!-- PDF Email Attachment Toggle -->
+                                <div>
+                                    <div class="evonee-setting-row">
+                                        <div class="evonee-setting-info">
+                                            <strong>📄 PDF Quote Attachment in Emails</strong>
+                                            <p>Automatically attach a generated PDF Quote Summary file to sales notification & customer auto-reply emails.</p>
+                                        </div>
+                                        <label class="evonee-toggle">
+                                            <input type="checkbox" name="enable_pdf_attachment" value="1" <?php checked(isset($settings['enable_pdf_attachment']) ? $settings['enable_pdf_attachment'] : '1', '1'); ?>>
+                                            <span class="evonee-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+
                             </div>
                         </div>
+                    </div> <!-- End #tab-integrations -->
 
-                        <p class="submit" style="margin-top: 20px;">
-                            <button type="submit" class="button button-primary button-large" style="background:#6d28d9; border-color:#6d28d9;">💾 Save Settings & Options</button>
-                        </p>
-
+                    <!-- Sticky Bottom Save Bar -->
+                    <div class="eq-sticky-save-bar">
+                        <div style="font-size:13px; color:#64748b;">
+                            💡 <strong>Tip:</strong> Configuration changes take effect immediately after saving.
+                        </div>
+                        <button type="submit" class="button button-primary button-large" style="background:#6d28d9; border-color:#6d28d9; padding: 6px 26px; font-weight:700;">💾 Save All Settings & Options</button>
                     </div>
+
                 </div>
             </form>
         </div>
 
         <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Tab Switcher Logic
+            const tabBtns = document.querySelectorAll('.eq-tab-btn');
+            const tabContents = document.querySelectorAll('.eq-tab-content');
+            const activeTabInput = document.getElementById('eq_active_tab');
+
+            function switchTab(targetId) {
+                tabBtns.forEach(btn => {
+                    if (btn.getAttribute('data-tab') === targetId) {
+                        btn.classList.add('active');
+                    } else {
+                        btn.classList.remove('active');
+                    }
+                });
+                tabContents.forEach(content => {
+                    if (content.id === targetId) {
+                        content.classList.add('active');
+                    } else {
+                        content.classList.remove('active');
+                    }
+                });
+                if (activeTabInput) activeTabInput.value = targetId;
+                if (history.replaceState) {
+                    history.replaceState(null, null, '#' + targetId);
+                } else {
+                    window.location.hash = targetId;
+                }
+            }
+
+            tabBtns.forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    switchTab(this.getAttribute('data-tab'));
+                });
+            });
+
+            // Restore active tab from hash on load
+            const currentHash = window.location.hash ? window.location.hash.replace('#', '') : '';
+            if (currentHash && document.getElementById(currentHash)) {
+                switchTab(currentHash);
+            }
+
             // Color picker text sync
             const colorPicker = document.querySelector('input[name="email_header_color"]');
             const colorText   = document.getElementById('email-header-color-text');

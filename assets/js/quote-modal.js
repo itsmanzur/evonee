@@ -100,6 +100,41 @@ document.addEventListener('DOMContentLoaded', function () {
         if (progressFill) progressFill.style.width = '15%';
     }
 
+    // --- Live Price Estimator Calculation ---
+    const estimatorBadge = document.getElementById('eq-live-price-estimator');
+    const priceVal = document.getElementById('eq-estimated-price-val');
+
+    function updatePriceEstimate() {
+        if (!estimatorBadge || !priceVal) return;
+        if (typeof eqQuoteData !== 'undefined' && eqQuoteData.enableEstimator === '0') {
+            estimatorBadge.style.display = 'none';
+            return;
+        }
+
+        let qty = 100;
+        if (qtySelect && qtySelect.value) {
+            if (qtySelect.value === 'other' || qtySelect.value === 'Other') {
+                qty = parseInt(otherQtyInput.value.replace(/[^0-9]/g, '')) || 100;
+            } else {
+                qty = parseInt(qtySelect.value.replace(/[^0-9]/g, '')) || 100;
+            }
+        }
+
+        const basePrice = (typeof eqQuoteData !== 'undefined' && eqQuoteData.basePrice) ? parseFloat(eqQuoteData.basePrice) : 50.00;
+        const pricePerItem = (typeof eqQuoteData !== 'undefined' && eqQuoteData.pricePerItem) ? parseFloat(eqQuoteData.pricePerItem) : 1.25;
+
+        const total = basePrice + (qty * pricePerItem);
+        priceVal.textContent = '$' + total.toFixed(2);
+        estimatorBadge.style.display = 'block';
+    }
+
+    if (qtySelect) {
+        qtySelect.addEventListener('change', updatePriceEstimate);
+    }
+    if (otherQtyInput) {
+        otherQtyInput.addEventListener('input', updatePriceEstimate);
+    }
+
     if (form) {
         form.addEventListener('input', saveDraft);
         form.addEventListener('change', saveDraft);
@@ -138,6 +173,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Restore draft from LocalStorage
         restoreDraft();
         toggleWristbandFields();
+        updatePriceEstimate();
 
         // Show Modal
         modal.classList.add('eq-modal--active');
@@ -344,7 +380,8 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function assignArtworkFiles(fileList) {
-        const maxBytes = 20 * 1024 * 1024;
+        const maxBytes = (typeof eqQuoteData !== 'undefined' && eqQuoteData.maxUploadSize) ? parseInt(eqQuoteData.maxUploadSize, 10) : (20 * 1024 * 1024);
+        const maxFormatted = (typeof eqQuoteData !== 'undefined' && eqQuoteData.maxUploadSizeFormatted) ? eqQuoteData.maxUploadSizeFormatted : '20MB';
         const allowedExts = ['ai', 'pdf', 'eps', 'svg', 'png', 'jpg', 'jpeg'];
         const dt = new DataTransfer();
         const accepted = [];
@@ -352,7 +389,7 @@ document.addEventListener('DOMContentLoaded', function () {
         Array.from(fileList).slice(0, 3).forEach(function (file) {
             const ext = file.name.split('.').pop().toLowerCase();
             if (file.size > maxBytes) {
-                showFieldError('eq-artwork', 'File exceeds the maximum limit of 20MB.');
+                showFieldError('eq-artwork', 'File exceeds the maximum allowed limit of ' + maxFormatted + '.');
                 return;
             }
             if (!allowedExts.includes(ext)) {

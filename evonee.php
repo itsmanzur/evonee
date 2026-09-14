@@ -23,6 +23,7 @@ if (!defined('EQ_SALES_EMAIL')) {
 }
 
 // Include Required Classes
+require_once EVONEE_PLUGIN_DIR . 'inc/class-quote-pdf.php';
 require_once EVONEE_PLUGIN_DIR . 'inc/class-quote-modal.php';
 require_once EVONEE_PLUGIN_DIR . 'inc/class-quote-ajax.php';
 require_once EVONEE_PLUGIN_DIR . 'inc/class-quote-mailer.php';
@@ -36,8 +37,13 @@ add_action('plugins_loaded', function() {
     Evonee_Quote_Modal::init();
     Evonee_Quote_Ajax::init();
     Evonee_Quote_Admin::init();
-    // Runtime DB migration: ensure admin_notes column exists
+    // Runtime DB migration: ensure admin_notes and estimated_total columns exist
     Evonee_Quote_Ajax::maybe_add_admin_notes_column();
+});
+
+// WooCommerce "Request a Quote" Button Hook on Single Product Page
+add_action('woocommerce_after_add_to_cart_button', function() {
+    Evonee_Quote_Modal::render_woocommerce_button();
 });
 
 // WP Dashboard Widget

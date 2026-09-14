@@ -142,11 +142,17 @@ class Evonee_Quote_Modal {
 
         wp_enqueue_script('evonee-modal-js', EVONEE_PLUGIN_URL . 'assets/js/quote-modal.js', [], EVONEE_VERSION, true);
 
+        $max_upload_bytes = min(20 * 1024 * 1024, wp_max_upload_size());
         wp_localize_script('evonee-modal-js', 'eqQuoteData', [
-            'ajaxUrl'          => admin_url('admin-ajax.php'),
-            'nonce'            => wp_create_nonce('eq_submit_quote'),
-            'recaptchaSiteKey' => $recaptcha_site_key,
-            'placeholder'      => self::get_svg_placeholder(),
+            'ajaxUrl'                => admin_url('admin-ajax.php'),
+            'nonce'                  => wp_create_nonce('eq_submit_quote'),
+            'recaptchaSiteKey'       => $recaptcha_site_key,
+            'placeholder'            => self::get_svg_placeholder(),
+            'maxUploadSize'          => $max_upload_bytes,
+            'maxUploadSizeFormatted' => size_format($max_upload_bytes),
+            'basePrice'              => floatval($settings['base_quote_price'] ?? 50.00),
+            'pricePerItem'           => floatval($settings['price_per_item'] ?? 1.25),
+            'enableEstimator'        => isset($settings['enable_price_estimator']) ? $settings['enable_price_estimator'] : '1',
         ]);
     }
 
@@ -621,6 +627,12 @@ class Evonee_Quote_Modal {
 
                             <!-- Submit Button -->
                             <div class="eq-submit-wrap">
+                                <!-- Instant Price Estimator Live Badge -->
+                                <div id="eq-live-price-estimator" class="eq-price-estimator-badge" style="display:none; margin-bottom: 15px; padding: 12px 16px; background: #f3f0fc; border: 1px solid #d8b4fe; border-radius: 8px; text-align: center;">
+                                    <span style="color: #6d28d9; font-weight: 700; font-size: 15px;">Estimated Cost: <span id="eq-estimated-price-val">$0.00</span></span>
+                                    <p style="margin: 4px 0 0 0; font-size: 11px; color: #64748b;">Instant estimate • Final price confirmed after artwork review</p>
+                                </div>
+
                                 <button type="submit" id="eq-submit-btn" class="eq-btn-submit">
                                     <span>Get Free Quote</span>
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>

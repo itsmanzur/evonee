@@ -15,6 +15,7 @@ class Evonee_Quote_Ajax {
         add_action('wp_ajax_eq_get_today_stats',      [$instance, 'handle_today_stats']);
         add_action('wp_ajax_eq_save_followup',        [$instance, 'handle_save_followup']);
         add_action('wp_ajax_eq_save_price_offer',     [$instance, 'handle_save_price_offer']);
+        add_action('wp_ajax_eq_download_pdf',         [$instance, 'handle_download_pdf']);
     }
 
     /**
@@ -62,6 +63,9 @@ class Evonee_Quote_Ajax {
     public function handle_today_stats() {
         if (!current_user_can('manage_options')) {
             wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        if (!check_ajax_referer('eq_dashboard_stats_nonce', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Security check failed.'], 403);
         }
 
         global $wpdb;
@@ -331,6 +335,13 @@ class Evonee_Quote_Ajax {
         if (empty($has_expiry)) {
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
             $wpdb->query("ALTER TABLE {$wpdb->prefix}eq_quote_submissions ADD COLUMN token_expiry DATETIME DEFAULT NULL AFTER acceptance_token;");
+        }
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter
+        $has_estimated_total = $wpdb->get_results($wpdb->prepare("SHOW COLUMNS FROM {$wpdb->prefix}eq_quote_submissions LIKE %s", 'estimated_total'));
+        if (empty($has_estimated_total)) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $wpdb->query("ALTER TABLE {$wpdb->prefix}eq_quote_submissions ADD COLUMN estimated_total DECIMAL(10,2) DEFAULT '0.00' AFTER status;");
         }
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter
@@ -607,6 +618,13 @@ class Evonee_Quote_Ajax {
 
         $artwork_url = !empty($artwork_urls) ? wp_json_encode($artwork_urls) : '';
 
+        // Calculate Server-Side Instant Price Estimate
+        $settings = Evonee_Quote_Admin::get_settings();
+        $base_price = isset($settings['base_quote_price']) ? floatval($settings['base_quote_price']) : 50.00;
+        $qty_int    = intval(preg_replace('/[^0-9]/', '', $quantity)) ?: 100;
+        $unit_price = isset($settings['price_per_item']) ? floatval($settings['price_per_item']) : 1.25;
+        $estimated_total = round($base_price + ($qty_int * $unit_price), 2);
+
         // 8. Prepare Submission Array
         $submission = [
             'full_name'       => $full_name,
@@ -622,6 +640,7 @@ class Evonee_Quote_Ajax {
             'specific_date'   => $specific_date,
             'zip_code'        => $zip_code,
             'project_notes'   => $project_notes,
+            'estimated_total' => $estimated_total,
             'created_at'      => current_time('mysql')
         ];
 
@@ -640,15 +659,16 @@ class Evonee_Quote_Ajax {
                 'country'         => $submission['country'],
                 'product'         => $submission['product'],
                 'quantity'        => $submission['quantity'],
-                'product_details' => json_encode($submission['product_details']),
+                'product_details' => wp_json_encode($submission['product_details']),
                 'artwork_url'     => $submission['artwork_url'],
                 'timeframe'       => $submission['timeframe'],
                 'specific_date'   => $submission['specific_date'],
                 'zip_code'        => $submission['zip_code'],
                 'project_notes'   => $submission['project_notes'],
+                'estimated_total' => $submission['estimated_total'],
                 'created_at'      => $submission['created_at']
             ],
-            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s']
+            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%s']
         );
 
         if ($inserted === false) {
@@ -665,14 +685,98 @@ class Evonee_Quote_Ajax {
         // 10. Send Notification Emails
         Evonee_Quote_Mailer::send_notification($submission);
 
-        // 11. Dispatch Webhook & Slack (Phase 3)
+        // 11. Dispatch Webhook, Slack, Discord & Google Sheets Sync
         self::dispatch_webhook($submission);
         self::dispatch_slack($submission);
+        self::dispatch_discord($submission);
+        self::dispatch_google_sheets($submission);
 
         // 12. Return Success Response
         wp_send_json_success([
             'message' => 'Quote request received! We will get back to you with a custom quote and digital proof within 24 hours.'
         ]);
+    }
+
+    /**
+     * Dispatch submission payload to Google Sheets Apps Script Webhook
+     *
+     * @param array $submission
+     * @return bool|WP_Error
+     */
+    public static function dispatch_google_sheets(array $submission) {
+        $settings = Evonee_Quote_Admin::get_settings();
+        if (empty($settings['enable_google_sheets']) || $settings['enable_google_sheets'] !== '1' || empty($settings['google_sheets_url'])) {
+            return false;
+        }
+
+        $artwork_urls = self::parse_artwork_urls($submission['artwork_url'] ?? '');
+        $artwork_str  = !empty($artwork_urls) ? implode(' | ', $artwork_urls) : 'None';
+        $details_str  = self::format_product_details_text($submission['product_details'] ?? '');
+
+        $payload = [
+            'submission_id'   => !empty($submission['id']) ? intval($submission['id']) : 0,
+            'created_at'      => $submission['created_at'] ?? current_time('mysql'),
+            'full_name'       => $submission['full_name'] ?? '',
+            'company'         => $submission['company'] ?? '',
+            'email'           => $submission['email'] ?? '',
+            'phone'           => $submission['phone'] ?? '',
+            'country'         => $submission['country'] ?? '',
+            'product'         => $submission['product'] ?? '',
+            'quantity'        => $submission['quantity'] ?? '',
+            'product_details' => $details_str,
+            'artwork_urls'    => $artwork_str,
+            'timeframe'       => $submission['timeframe'] ?? '',
+            'specific_date'   => $submission['specific_date'] ?? '',
+            'zip_code'        => $submission['zip_code'] ?? '',
+            'project_notes'   => $submission['project_notes'] ?? '',
+            'status'          => $submission['status'] ?? 'new',
+        ];
+
+        $response = wp_remote_post(esc_url_raw($settings['google_sheets_url']), [
+            'headers'     => ['Content-Type' => 'application/json; charset=utf-8'],
+            'body'        => wp_json_encode($payload),
+            'timeout'     => 15,
+            'redirection' => 5,
+        ]);
+
+        $status = is_wp_error($response) ? 'Error: ' . $response->get_error_message() : 'HTTP ' . wp_remote_retrieve_response_code($response);
+        if (!empty($submission['id'])) {
+            self::log_activity($submission['id'], 'google_sheets_sent', 'Dispatched Google Sheets Sync: ' . $status);
+        }
+
+        return is_wp_error($response) ? $response : true;
+    }
+
+    /**
+     * Manual 1-click Google Sheet sync trigger from Admin Submissions table
+     */
+    public function handle_sync_google_sheet() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        if (!check_ajax_referer('eq_sync_google_sheet_nonce', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Security check failed.'], 403);
+        }
+
+        $id = isset($_POST['submission_id']) ? intval($_POST['submission_id']) : 0;
+        if (!$id) {
+            wp_send_json_error(['message' => 'Invalid submission ID.']);
+        }
+
+        global $wpdb;
+        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}eq_quote_submissions WHERE id = %d", $id), ARRAY_A);
+        if (!$row) {
+            wp_send_json_error(['message' => 'Submission not found.']);
+        }
+
+        $res = self::dispatch_google_sheets($row);
+        if (is_wp_error($res)) {
+            wp_send_json_error(['message' => 'Sync failed: ' . $res->get_error_message()]);
+        } elseif ($res === false) {
+            wp_send_json_error(['message' => 'Google Sheets sync is not enabled in Settings.']);
+        }
+
+        wp_send_json_success(['message' => 'Successfully synced submission #' . $id . ' to Google Sheets!']);
     }
 
     /**
@@ -684,15 +788,23 @@ class Evonee_Quote_Ajax {
             return;
         }
 
+        $payload_json = wp_json_encode($submission);
+        $headers = ['Content-Type' => 'application/json; charset=utf-8'];
+
+        if (!empty($settings['webhook_secret'])) {
+            $signature = hash_hmac('sha256', $payload_json, $settings['webhook_secret']);
+            $headers['X-Evonee-Signature'] = $signature;
+        }
+
         $response = wp_remote_post(esc_url_raw($settings['webhook_url']), [
-            'headers' => ['Content-Type' => 'application/json; charset=utf-8'],
-            'body'    => json_encode($submission),
+            'headers' => $headers,
+            'body'    => $payload_json,
             'timeout' => 15
         ]);
 
         $status = is_wp_error($response) ? 'Error: ' . $response->get_error_message() : 'HTTP ' . wp_remote_retrieve_response_code($response);
         if (!empty($submission['id'])) {
-            self::log_activity($submission['id'], 'webhook_sent', 'Dispatched Webhook: ' . $status);
+            self::log_activity($submission['id'], 'webhook_sent', 'Dispatched Outgoing CRM Webhook: ' . $status);
         }
     }
 
@@ -718,7 +830,7 @@ class Evonee_Quote_Ajax {
 
         $response = wp_remote_post(esc_url_raw($settings['slack_webhook_url']), [
             'headers' => ['Content-Type' => 'application/json; charset=utf-8'],
-            'body'    => json_encode($slack_payload),
+            'body'    => wp_json_encode($slack_payload),
             'timeout' => 15
         ]);
 
@@ -726,6 +838,71 @@ class Evonee_Quote_Ajax {
         if (!empty($submission['id'])) {
             self::log_activity($submission['id'], 'slack_sent', 'Dispatched Slack Notification: ' . $status);
         }
+    }
+
+    /**
+     * Dispatch Discord Notification
+     */
+    public static function dispatch_discord(array $submission) {
+        $settings = Evonee_Quote_Admin::get_settings();
+        if (empty($settings['enable_discord']) || $settings['enable_discord'] !== '1' || empty($settings['discord_webhook_url'])) {
+            return;
+        }
+
+        $discord_payload = [
+            'embeds' => [
+                [
+                    'title' => '📥 New Quote Request Received',
+                    'color' => 7153881, // #6d28d9 purple
+                    'fields' => [
+                        ['name' => 'Customer', 'value' => esc_html($submission['full_name']), 'inline' => true],
+                        ['name' => 'Email', 'value' => esc_html($submission['email']), 'inline' => true],
+                        ['name' => 'Phone', 'value' => esc_html($submission['phone']), 'inline' => true],
+                        ['name' => 'Product', 'value' => esc_html($submission['product']), 'inline' => true],
+                        ['name' => 'Quantity', 'value' => esc_html($submission['quantity']), 'inline' => true],
+                        ['name' => 'Estimated Total', 'value' => '$' . number_format((float)($submission['estimated_total'] ?? 0), 2), 'inline' => true],
+                    ],
+                    'footer' => ['text' => 'Evonee Quote System v2.0']
+                ]
+            ]
+        ];
+
+        $response = wp_remote_post(esc_url_raw($settings['discord_webhook_url']), [
+            'headers' => ['Content-Type' => 'application/json; charset=utf-8'],
+            'body'    => wp_json_encode($discord_payload),
+            'timeout' => 15
+        ]);
+
+        $status = is_wp_error($response) ? 'Error: ' . $response->get_error_message() : 'HTTP ' . wp_remote_retrieve_response_code($response);
+        if (!empty($submission['id'])) {
+            self::log_activity($submission['id'], 'discord_sent', 'Dispatched Discord Notification: ' . $status);
+        }
+    }
+
+    /**
+     * Handle Admin PDF Quote Download (AJAX)
+     */
+    public function handle_download_pdf() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized.', 'Evonee Quote System', ['response' => 403]);
+        }
+
+        $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+        if (!$id) {
+            wp_die('Invalid quote submission ID.', 'Evonee Quote System', ['response' => 400]);
+        }
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'eq_quote_submissions';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table_name} WHERE id = %d", $id));
+
+        if (!$row) {
+            wp_die('Quote submission record not found.', 'Evonee Quote System', ['response' => 404]);
+        }
+
+        Evonee_Quote_PDF::generate($row, 'D', 'Quote-Estimate-' . $id . '.pdf');
+        exit;
     }
 
     /**
@@ -743,10 +920,11 @@ class Evonee_Quote_Ajax {
             return new WP_Error('upload_error', 'File upload error code: ' . $file_array['error']);
         }
 
-        // Max file size: 20MB
-        $max_size = 20 * 1024 * 1024;
-        if ($file_array['size'] > $max_size) {
-            return new WP_Error('file_too_large', 'File size exceeds the 20MB limit.');
+        // Max file size: 20MB or WordPress server limit (whichever is smaller)
+        $limit_bytes   = min(20 * 1024 * 1024, wp_max_upload_size());
+        $formatted_max = size_format($limit_bytes);
+        if ($file_array['size'] > $limit_bytes) {
+            return new WP_Error('file_too_large', sprintf('File size exceeds the maximum allowed limit of %s.', $formatted_max));
         }
 
         // Allowed extensions and MIME types
@@ -803,27 +981,91 @@ class Evonee_Quote_Ajax {
 
         $uploaded_file_path = $move_file['file'];
 
-        // SVG Sanitization pass — comprehensive XSS prevention
+        // SVG Sanitization pass — robust DOMDocument XML DOM cleaning (XSS & XXE protection)
         if ($ext === 'svg' && file_exists($uploaded_file_path)) {
             $svg_content = file_get_contents($uploaded_file_path);
             if ($svg_content !== false) {
-                // Strip <script> tags
-                $clean_svg = preg_replace('/<script\b[^>]*>.*?<\/script>/is', '', $svg_content);
-                // Strip inline event handlers (on*=) in both single and double quotes
-                $clean_svg = preg_replace('/\s+on[a-z]+\s*=\s*"[^"]*"/i', '', $clean_svg);
-                $clean_svg = preg_replace("/\s+on[a-z]+\s*=\s*'[^']*'/i", '', $clean_svg);
-                // Strip <use> tags which can load external/malicious resources
-                $clean_svg = preg_replace('/<use\b[^>]*\/?>/i', '', $clean_svg);
-                // Strip <foreignObject> tags (allows arbitrary HTML injection)
-                $clean_svg = preg_replace('/<foreignObject[^>]*>.*?<\/foreignObject>/is', '', $clean_svg);
-                // Strip xlink:href and href with javascript: or data: URIs
-                $clean_svg = preg_replace('/(?:xlink:href|href)\s*=\s*["\']?\s*(?:javascript|data):[^"\'>\s]*/i', 'href="#"', $clean_svg);
-                // Strip style attributes containing javascript: or expression()
-                $clean_svg = preg_replace('/style\s*=\s*"[^"]*(?:javascript:|expression\s*\()[^"]*"/i', '', $clean_svg);
-                if (preg_match('/<script|on[a-z]+\s*=|javascript:|foreignObject/i', $clean_svg)) {
-                    return new WP_Error('unsafe_svg', 'SVG file contains unsafe content and was rejected.');
+                // Prevent XXE attacks by disabling entity loader
+                $prev_entity_loader = libxml_disable_entity_loader(true);
+                libxml_use_internal_errors(true);
+
+                $dom = new DOMDocument();
+                $dom->formatOutput = true;
+                // Suppress XML parsing errors for SVG compatibility
+                $loaded = $dom->loadXML($svg_content, LIBXML_NONET | LIBXML_NOBLANKS);
+
+                if ($loaded) {
+                    $disallowed_tags = ['script', 'iframe', 'object', 'embed', 'foreignobject', 'use', 'applet', 'meta', 'link', 'style', 'base'];
+
+                    // 1. Remove dangerous XML nodes
+                    $nodes_to_remove = [];
+                    $elements = $dom->getElementsByTagName('*');
+                    foreach ($elements as $element) {
+                        $tag_name = strtolower($element->tagName);
+                        if (in_array($tag_name, $disallowed_tags, true)) {
+                            $nodes_to_remove[] = $element;
+                            continue;
+                        }
+
+                        // 2. Clean dangerous attributes (on*, href/src with javascript:, etc.)
+                        if ($element->hasAttributes()) {
+                            $attrs_to_remove = [];
+                            foreach ($element->attributes as $attr) {
+                                $attr_name  = strtolower($attr->name);
+                                $attr_value = strtolower(trim($attr->value));
+
+                                // Remove inline JavaScript event handlers (onload, onclick, onbegin, etc.)
+                                if (strpos($attr_name, 'on') === 0) {
+                                    $attrs_to_remove[] = $attr->name;
+                                    continue;
+                                }
+
+                                // Remove javascript: & data: URIs in links/attributes
+                                if (in_array($attr_name, ['href', 'xlink:href', 'src', 'action', 'data'], true)) {
+                                    if (preg_match('/^\s*(javascript|data\s*:text\/html|data\s*:image\/svg\+xml)\s*:/i', $attr_value)) {
+                                        $attrs_to_remove[] = $attr->name;
+                                        continue;
+                                    }
+                                }
+
+                                // Remove dangerous style attributes containing javascript: or expression()
+                                if ($attr_name === 'style' && preg_match('/(javascript|expression|url\s*\(\s*javascript|-moz-binding)/i', $attr_value)) {
+                                    $attrs_to_remove[] = $attr->name;
+                                    continue;
+                                }
+                            }
+
+                            foreach ($attrs_to_remove as $attr_name) {
+                                $element->removeAttribute($attr_name);
+                            }
+                        }
+                    }
+
+                    foreach ($nodes_to_remove as $node) {
+                        if ($node->parentNode) {
+                            $node->parentNode->removeChild($node);
+                        }
+                    }
+
+                    $clean_svg = $dom->saveXML();
+                    libxml_clear_errors();
+
+                    if (!empty($clean_svg)) {
+                        file_put_contents($uploaded_file_path, $clean_svg);
+                    }
+                } else {
+                    libxml_clear_errors();
+                    // Fallback regex sanitization if XML load failed
+                    $clean_svg = preg_replace('/<script\b[^>]*>.*?<\/script>/is', '', $svg_content);
+                    $clean_svg = preg_replace('/\s+on[a-z]+\s*=\s*"[^"]*"/i', '', $clean_svg);
+                    $clean_svg = preg_replace("/\s+on[a-z]+\s*=\s*'[^']*'/i", '', $clean_svg);
+                    $clean_svg = preg_replace('/<foreignObject[^>]*>.*?<\/foreignObject>/is', '', $clean_svg);
+                    file_put_contents($uploaded_file_path, $clean_svg);
                 }
-                file_put_contents($uploaded_file_path, $clean_svg);
+
+                if (function_exists('libxml_disable_entity_loader')) {
+                    libxml_disable_entity_loader($prev_entity_loader);
+                }
             }
         }
 

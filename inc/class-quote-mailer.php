@@ -44,9 +44,10 @@ class Evonee_Quote_Mailer {
 
             $subject = sprintf('New Quote Request — %s from %s', $product_name, $full_name);
 
+            $reply_name = self::encode_email_name($submission['full_name'] ?? 'Customer');
             $headers = [
                 'Content-Type: text/html; charset=UTF-8',
-                'Reply-To: ' . esc_html($full_name) . ' <' . sanitize_email($submission['email']) . '>'
+                'Reply-To: ' . (!empty($reply_name) ? $reply_name . ' ' : '') . '<' . sanitize_email($submission['email']) . '>'
             ];
 
             $artwork_urls = Evonee_Quote_Ajax::parse_artwork_urls($submission['artwork_url'] ?? '');
@@ -135,7 +136,28 @@ class Evonee_Quote_Mailer {
             </html>
             ';
 
-            $sent = wp_mail($recipients, $subject, $message, $headers);
+            $attachments = [];
+            $temp_pdf_path = '';
+            if (!isset($settings['enable_pdf_attachment']) || $settings['enable_pdf_attachment'] === '1') {
+                $upload_dir = wp_upload_dir();
+                $temp_dir = $upload_dir['basedir'] . '/evonee-quotes/pdf-temp';
+                if (!file_exists($temp_dir)) {
+                    wp_mkdir_p($temp_dir);
+                }
+                $pdf_id = !empty($submission['id']) ? $submission['id'] : time();
+                $temp_pdf_path = $temp_dir . '/Quote-Estimate-' . $pdf_id . '.pdf';
+                Evonee_Quote_PDF::generate($submission, 'F', $temp_pdf_path);
+                if (file_exists($temp_pdf_path)) {
+                    $attachments[] = $temp_pdf_path;
+                }
+            }
+
+            $sent = wp_mail($recipients, $subject, $message, $headers, $attachments);
+
+            if (!empty($temp_pdf_path) && file_exists($temp_pdf_path)) {
+                @unlink($temp_pdf_path);
+            }
+
             $sub_id = !empty($submission['id']) ? intval($submission['id']) : 0;
             if ($sub_id) {
                 $recip_str = is_array($recipients) ? implode(', ', $recipients) : $recipients;
@@ -169,9 +191,10 @@ class Evonee_Quote_Mailer {
 
             $subject = "We've Received Your Quote Request - " . $brand_name;
 
+            $from_name = self::encode_email_name($brand_name . ' Team');
             $headers = [
                 'Content-Type: text/html; charset=UTF-8',
-                'From: ' . $brand_name . ' Team <' . $sales_email . '>'
+                'From: ' . (!empty($from_name) ? $from_name . ' ' : '') . '<' . $sales_email . '>'
             ];
 
             $header_logo_html = !empty($logo_url)
@@ -216,7 +239,28 @@ class Evonee_Quote_Mailer {
             </html>
             ';
 
-            $sent = wp_mail($to, $subject, $message, $headers);
+            $attachments = [];
+            $temp_pdf_path = '';
+            if (!isset($settings['enable_pdf_attachment']) || $settings['enable_pdf_attachment'] === '1') {
+                $upload_dir = wp_upload_dir();
+                $temp_dir = $upload_dir['basedir'] . '/evonee-quotes/pdf-temp';
+                if (!file_exists($temp_dir)) {
+                    wp_mkdir_p($temp_dir);
+                }
+                $pdf_id = !empty($submission['id']) ? $submission['id'] : time();
+                $temp_pdf_path = $temp_dir . '/Quote-Estimate-' . $pdf_id . '.pdf';
+                Evonee_Quote_PDF::generate($submission, 'F', $temp_pdf_path);
+                if (file_exists($temp_pdf_path)) {
+                    $attachments[] = $temp_pdf_path;
+                }
+            }
+
+            $sent = wp_mail($to, $subject, $message, $headers, $attachments);
+
+            if (!empty($temp_pdf_path) && file_exists($temp_pdf_path)) {
+                @unlink($temp_pdf_path);
+            }
+
             $sub_id = !empty($submission['id']) ? intval($submission['id']) : 0;
             if ($sub_id) {
                 Evonee_Quote_Ajax::log_email($sub_id, $to, $subject, 'customer_autoreply', $sent ? 'sent' : 'failed');
@@ -225,5 +269,27 @@ class Evonee_Quote_Mailer {
         } catch (\Throwable $e) {
             return false;
         }
+    }
+
+    /**
+     * Safely format and encode name for email header (MIME / Special character safe)
+     *
+     * @param string $name
+     * @return string
+     */
+    private static function encode_email_name($name) {
+        $name = trim(preg_replace('/[\r\n]+/', '', (string) $name));
+        if (empty($name)) {
+            return '';
+        }
+        if (preg_match('/[^\x20-\x7E]/', $name)) {
+            if (function_exists('mb_encode_mimeheader')) {
+                return mb_encode_mimeheader($name, 'UTF-8', 'B');
+            }
+        }
+        if (preg_match('/[\x22\x2C\x3B]/', $name)) {
+            return '"' . addcslashes($name, '"\\') . '"';
+        }
+        return $name;
     }
 }
