@@ -2318,7 +2318,7 @@ class Evonee_Quote_Admin {
                         <div class="evonee-doc-card" style="margin-top:20px;">
                             <div class="evonee-card-header">
                                 <span class="dashicons dashicons-email-alt"></span>
-                                <h2>4. Email Template Branding</h2>
+                                <h2>5. Email Template Branding</h2>
                             </div>
                             <div class="evonee-card-body">
                                 <p>Customize how your notification and auto-reply emails look. Changes apply to both admin and customer emails.</p>
@@ -2357,7 +2357,7 @@ class Evonee_Quote_Admin {
                         <div class="evonee-doc-card" style="margin-top:20px;">
                             <div class="evonee-card-header">
                                 <span class="dashicons dashicons-format-chat"></span>
-                                <h2>5. Quick Reply Email Templates</h2>
+                                <h2>6. Quick Reply Email Templates</h2>
                             </div>
                             <div class="evonee-card-body">
                                 <p>Add pre-written email templates for common responses. Templates appear as a dropdown in the "Reply to Customer" modal. Use variables: <code>{customer_name}</code>, <code>{product}</code>, <code>{quote_id}</code>.</p>
@@ -2396,7 +2396,7 @@ class Evonee_Quote_Admin {
                         <div class="evonee-doc-card" style="margin-top:20px;">
                             <div class="evonee-card-header">
                                 <span class="dashicons dashicons-shield"></span>
-                                <h2>6. Security & Integrations (reCAPTCHA v3, Webhooks & Slack)</h2>
+                                <h2>7. Security & Integrations (reCAPTCHA v3, Webhooks & Slack)</h2>
                             </div>
                             <div class="evonee-card-body">
                                 
