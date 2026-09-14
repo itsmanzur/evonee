@@ -103,6 +103,9 @@ class Evonee_Quote_Admin {
             'enable_slack'             => '0',
             'slack_webhook_url'        => '',
             'enable_wc_quote_only'     => '0',
+            'wc_quote_condition'       => 'all',
+            'wc_hide_price'            => '0',
+            'enable_cart_quote'        => '0',
             'products_grid_limit'      => '12',
             'show_products_title'      => '0',
         ];
@@ -1949,6 +1952,9 @@ class Evonee_Quote_Admin {
                 'enable_slack'             => isset($_POST['enable_slack']) ? '1' : '0',
                 'slack_webhook_url'        => sanitize_text_field(wp_unslash($_POST['slack_webhook_url'] ?? '')),
                 'enable_wc_quote_only'     => isset($_POST['enable_wc_quote_only']) ? '1' : '0',
+                'wc_quote_condition'       => sanitize_text_field(wp_unslash($_POST['wc_quote_condition'] ?? 'all')),
+                'wc_hide_price'            => isset($_POST['wc_hide_price']) ? '1' : '0',
+                'enable_cart_quote'        => isset($_POST['enable_cart_quote']) ? '1' : '0',
                 'email_logo_url'           => esc_url_raw(wp_unslash($_POST['email_logo_url'] ?? '')),
                 'email_header_color'       => sanitize_hex_color(wp_unslash($_POST['email_header_color'] ?? '')) ?: '#6d28d9',
                 'email_brand_name'         => sanitize_text_field(wp_unslash($_POST['email_brand_name'] ?? '')),
@@ -2093,6 +2099,40 @@ class Evonee_Quote_Admin {
                                     </div>
                                     <label class="evonee-toggle">
                                         <input type="checkbox" name="enable_wc_quote_only" value="1" <?php checked($settings['enable_wc_quote_only'], '1'); ?>>
+                                        <span class="evonee-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div class="evonee-setting-row">
+                                    <div class="evonee-setting-info">
+                                        <strong>🎯 WooCommerce Quote Trigger Condition</strong>
+                                        <p>Choose when to trigger Quote mode on WooCommerce product pages.</p>
+                                    </div>
+                                    <select name="wc_quote_condition" style="min-width:180px;">
+                                        <option value="all" <?php selected($settings['wc_quote_condition'], 'all'); ?>>All Products & Catalog</option>
+                                        <option value="out_of_stock" <?php selected($settings['wc_quote_condition'], 'out_of_stock'); ?>>Out of Stock Products Only</option>
+                                        <option value="guests" <?php selected($settings['wc_quote_condition'], 'guests'); ?>>Guest / Unauthenticated Users Only</option>
+                                    </select>
+                                </div>
+
+                                <div class="evonee-setting-row">
+                                    <div class="evonee-setting-info">
+                                        <strong>🙈 Hide Product Prices (Call for Quote)</strong>
+                                        <p>Hides traditional WooCommerce product price display and replaces with "Price Available Upon Quote".</p>
+                                    </div>
+                                    <label class="evonee-toggle">
+                                        <input type="checkbox" name="wc_hide_price" value="1" <?php checked($settings['wc_hide_price'], '1'); ?>>
+                                        <span class="evonee-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div class="evonee-setting-row">
+                                    <div class="evonee-setting-info">
+                                        <strong>🛒 Enable Bulk Cart Quote Request (Cart & Checkout)</strong>
+                                        <p>Appends a "Request Quote for Cart" button on WooCommerce Cart & Checkout pages to convert cart contents into a bulk B2B quote request.</p>
+                                    </div>
+                                    <label class="evonee-toggle">
+                                        <input type="checkbox" name="enable_cart_quote" value="1" <?php checked($settings['enable_cart_quote'], '1'); ?>>
                                         <span class="evonee-slider"></span>
                                     </label>
                                 </div>

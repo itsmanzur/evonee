@@ -21,17 +21,58 @@ class Evonee_Quote_Modal {
 
         // WooCommerce Integration (Only if WooCommerce is active)
         if (class_exists('WooCommerce')) {
+            $settings = Evonee_Quote_Admin::get_settings();
             add_action('woocommerce_after_shop_loop_item', [$instance, 'render_wc_loop_button'], 15);
             add_action('wp', [$instance, 'wc_quote_only_mode']);
+
+            if (!empty($settings['wc_hide_price']) && $settings['wc_hide_price'] === '1') {
+                add_filter('woocommerce_get_price_html', [$instance, 'filter_wc_price_html'], 10, 2);
+            }
+
+            if (!empty($settings['enable_cart_quote']) && $settings['enable_cart_quote'] === '1') {
+                add_action('woocommerce_proceed_to_checkout', [$instance, 'render_wc_cart_quote_button'], 20);
+                add_action('woocommerce_after_checkout_form', [$instance, 'render_wc_cart_quote_button'], 20);
+            }
         }
+    }
+
+    /**
+     * Check if WooCommerce "Quote Only" mode applies based on settings and conditions
+     */
+    public function should_apply_wc_quote_mode($product = null) {
+        $settings = Evonee_Quote_Admin::get_settings();
+        if (empty($settings['enable_wc_quote_only']) || $settings['enable_wc_quote_only'] !== '1') {
+            return false;
+        }
+
+        $condition = isset($settings['wc_quote_condition']) ? $settings['wc_quote_condition'] : 'all';
+
+        if ($condition === 'out_of_stock') {
+            if ($product && $product->is_in_stock()) {
+                return false;
+            }
+        } elseif ($condition === 'guests') {
+            if (is_user_logged_in()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Filter WooCommerce Product Price HTML
+     */
+    public function filter_wc_price_html($price, $product) {
+        return '<span class="eq-price-hidden" style="color:#6d28d9; font-weight:700; font-size:14px;">Price Available Upon Quote</span>';
     }
 
     /**
      * WooCommerce "Quote Only" Mode (Module 5)
      */
     public function wc_quote_only_mode() {
-        $settings = Evonee_Quote_Admin::get_settings();
-        if (!empty($settings['enable_wc_quote_only']) && $settings['enable_wc_quote_only'] === '1') {
+        global $product;
+        if ($this->should_apply_wc_quote_mode($product)) {
             remove_action('woocommerce_after_shop_loop_item', 'woocommerce_template_loop_add_to_cart', 10);
             remove_action('woocommerce_single_product_summary', 'woocommerce_template_single_add_to_cart', 30);
             add_action('woocommerce_single_product_summary', [$this, 'render_wc_single_quote_btn'], 30);
@@ -45,6 +86,33 @@ class Evonee_Quote_Modal {
         $image_url = $image_id ? wp_get_attachment_image_url($image_id, 'large') : '';
         $desc      = wp_strip_all_tags($product->get_short_description() ?: $product->get_description());
         echo self::kses_button(self::quote_button($product->get_name(), $image_url, $desc, 'Request Custom Quote', 'eq-btn-primary button-large'));
+    }
+
+    /**
+     * Render Bulk Cart Quote Request Button for Cart & Checkout pages
+     */
+    public function render_wc_cart_quote_button() {
+        if (!function_exists('WC') || !WC()->cart || WC()->cart->is_empty()) return;
+
+        $cart_items = WC()->cart->get_cart();
+        $item_names = [];
+        $total_qty  = 0;
+
+        foreach ($cart_items as $cart_item) {
+            $prod = $cart_item['data'];
+            if ($prod) {
+                $qty = $cart_item['quantity'];
+                $total_qty += $qty;
+                $item_names[] = $prod->get_name() . ' (x' . $qty . ')';
+            }
+        }
+
+        $title = 'Bulk Cart Quote Request (' . count($cart_items) . ' items, total ' . $total_qty . ' pcs)';
+        $desc  = 'Cart Items Summary: ' . implode(', ', $item_names);
+
+        echo '<div style="margin-top:14px; margin-bottom:14px; text-align:center;">';
+        echo self::kses_button(self::quote_button($title, '', $desc, '📋 Request B2B Quote for Cart', 'eq-btn-primary button-large', 'style="background:linear-gradient(135deg, #ea580c 0%, #c2410c 100%); width:100%; border-radius:6px; font-weight:700; padding:12px 20px;"'));
+        echo '</div>';
     }
 
     /**
