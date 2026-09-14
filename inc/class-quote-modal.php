@@ -18,6 +18,7 @@ class Evonee_Quote_Modal {
         add_shortcode('evonee_full_landing_page', [$instance, 'render_full_landing_page']); // Full demo layout if needed
 
         add_shortcode('evonee_quote_button', [$instance, 'shortcode_quote_button']);
+        add_shortcode('evonee_customer_portal', [$instance, 'render_customer_portal']);
 
         // WooCommerce Integration (Only if WooCommerce is active)
         if (class_exists('WooCommerce')) {
@@ -266,6 +267,102 @@ class Evonee_Quote_Modal {
         ], $atts);
 
         return self::kses_button(self::quote_button($atts['product'], $atts['image'], $atts['description'], $atts['text'], $atts['class']));
+    }
+
+    /**
+     * Shortcode: [evonee_customer_portal] (Phase 3.1)
+     * Renders front-end customer quote history portal
+     */
+    public function render_customer_portal($atts) {
+        global $wpdb;
+        $current_user = wp_get_current_user();
+        $user_email   = is_user_logged_in() ? $current_user->user_email : '';
+
+        if (isset($_POST['eq_search_email']) && check_admin_referer('eq_portal_search_nonce')) {
+            $user_email = sanitize_email(wp_unslash($_POST['eq_search_email']));
+        }
+
+        ob_start();
+        ?>
+        <div class="eq-customer-portal-wrap" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:24px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); font-family:sans-serif;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:2px solid #f1f5f9; padding-bottom:14px;">
+                <div>
+                    <h2 style="margin:0; font-size:20px; color:#4c1d95;">📜 My Quote Requests Portal</h2>
+                    <p style="margin:4px 0 0; font-size:13px; color:#64748b;">View and track your submitted custom quote requests, price offers, and acceptance links.</p>
+                </div>
+            </div>
+
+            <?php if (empty($user_email)): ?>
+                <form method="post" style="max-width:480px; margin:20px 0;">
+                    <?php wp_nonce_field('eq_portal_search_nonce'); ?>
+                    <label style="font-weight:700; display:block; margin-bottom:6px; font-size:13px;">Enter your email to find your submitted quotes:</label>
+                    <div style="display:flex; gap:8px;">
+                        <input type="email" name="eq_search_email" placeholder="your@email.com" required style="flex:1; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px;">
+                        <button type="submit" style="background:#6d28d9; color:#fff; border:none; padding:8px 16px; border-radius:6px; font-weight:700; cursor:pointer;">Search Quotes</button>
+                    </div>
+                </form>
+            <?php else: ?>
+                <?php
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+                $quotes = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}eq_quote_submissions WHERE email = %s ORDER BY id DESC LIMIT 50", $user_email));
+                ?>
+                <p style="font-size:13px; color:#475569; margin-bottom:16px;">Showing quote submissions for: <strong><?php echo esc_html($user_email); ?></strong></p>
+
+                <?php if (empty($quotes)): ?>
+                    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:20px; text-align:center; color:#64748b;">
+                        No quote submissions found for this email address.
+                    </div>
+                <?php else: ?>
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                            <thead>
+                                <tr style="background:#f8fafc; border-bottom:2px solid #e2e8f0; text-align:left;">
+                                    <th style="padding:10px;">ID</th>
+                                    <th style="padding:10px;">Date</th>
+                                    <th style="padding:10px;">Product Requested</th>
+                                    <th style="padding:10px;">Qty</th>
+                                    <th style="padding:10px;">Quoted Price</th>
+                                    <th style="padding:10px;">Status</th>
+                                    <th style="padding:10px;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($quotes as $q): 
+                                    $status_bg = '#16a34a';
+                                    if ($q->status === 'quoted') $status_bg = '#2563eb';
+                                    if ($q->status === 'approved') $status_bg = '#7c3aed';
+                                    if ($q->status === 'rejected') $status_bg = '#dc2626';
+                                ?>
+                                    <tr style="border-bottom:1px solid #f1f5f9;">
+                                        <td style="padding:10px; font-weight:700;">#<?php echo esc_html($q->id); ?></td>
+                                        <td style="padding:10px; color:#64748b;"><?php echo esc_html(gmdate('Y-m-d', strtotime($q->created_at))); ?></td>
+                                        <td style="padding:10px; font-weight:600; color:#1e1b2e;"><?php echo esc_html($q->product); ?></td>
+                                        <td style="padding:10px;"><?php echo esc_html($q->quantity); ?></td>
+                                        <td style="padding:10px; font-weight:700; color:#16a34a;"><?php echo floatval($q->quoted_price) > 0 ? '$' . number_format($q->quoted_price, 2) : 'Pending Offer'; ?></td>
+                                        <td style="padding:10px;">
+                                            <span style="background:<?php echo esc_attr($status_bg); ?>; color:#fff; padding:3px 8px; border-radius:12px; font-size:11px; text-transform:uppercase; font-weight:700;"><?php echo esc_html($q->status); ?></span>
+                                        </td>
+                                        <td style="padding:10px;">
+                                            <?php if (!empty($q->acceptance_token) && $q->status === 'quoted'): 
+                                                $accept_link  = add_query_arg(['eq_action' => 'accept_quote', 'token' => $q->acceptance_token], home_url());
+                                                $decline_link = add_query_arg(['eq_action' => 'decline_quote', 'token' => $q->acceptance_token], home_url());
+                                            ?>
+                                                <a href="<?php echo esc_url($accept_link); ?>" style="background:#16a34a; color:#fff; text-decoration:none; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; margin-right:4px;">Accept</a>
+                                                <a href="<?php echo esc_url($decline_link); ?>" style="background:#dc2626; color:#fff; text-decoration:none; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700;">Decline</a>
+                                            <?php else: ?>
+                                                <span style="color:#94a3b8; font-size:11px;">N/A</span>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            <?php endif; ?>
+        </div>
+        <?php
+        return ob_get_clean();
     }
 
     /**
