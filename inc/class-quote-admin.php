@@ -884,6 +884,17 @@ class Evonee_Quote_Admin {
                     </div>
                 </div>
 
+                <!-- 1-Click WooCommerce Order Conversion (Phase 1.2) -->
+                <div style="border-top:1px solid #e2e8f0; padding:12px 20px; background:#fff7ed; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <strong style="font-size:12.5px; color:#c2410c;">🛒 WooCommerce Order Integration:</strong>
+                        <span style="font-size:12px; color:#7c2d12; margin-left:4px;">Instantly convert quote into a WooCommerce Pending Order.</span>
+                    </div>
+                    <div>
+                        <button type="button" id="eq-convert-wc-btn" class="button button-primary" style="background:#ea580c; border-color:#ea580c;">🛒 Convert to WC Order</button>
+                    </div>
+                </div>
+
                 <!-- Internal Admin Notes (Phase 1.3) -->
                 <div style="border-top:1px solid #e2e8f0; padding:16px 20px; background:#f8fafc;">
                     <h3 style="margin:0 0 8px; font-size:13px; color:#374151; font-weight:700;">🔒 Internal Team Notes <small style="font-weight:400; color:#9ca3af;">(Not visible to customer)</small></h3>
@@ -1237,6 +1248,41 @@ class Evonee_Quote_Admin {
                             }
                         })
                         .catch(() => { savePriceBtn.disabled = false; });
+                });
+            }
+
+            // Convert to WooCommerce Order via AJAX (Phase 1.2)
+            const convertWcBtn = document.getElementById('eq-convert-wc-btn');
+            if (convertWcBtn) {
+                convertWcBtn.addEventListener('click', function() {
+                    if (!currentDetailId) return;
+                    if (!confirm('Convert Quote #' + currentDetailId + ' to a WooCommerce Order?')) return;
+
+                    convertWcBtn.disabled = true;
+                    convertWcBtn.textContent = 'Converting...';
+
+                    const fd = new FormData();
+                    fd.append('action', 'eq_convert_to_wc_order');
+                    fd.append('nonce', '<?php echo esc_js(wp_create_nonce('eq_convert_to_wc_order_nonce')); ?>');
+                    fd.append('submission_id', currentDetailId);
+
+                    fetch('<?php echo esc_url(admin_url('admin-ajax.php')); ?>', { method: 'POST', body: fd })
+                        .then(r => r.json())
+                        .then(data => {
+                            convertWcBtn.disabled = false;
+                            convertWcBtn.textContent = '🛒 Convert to WC Order';
+                            if (data.success) {
+                                alert(data.data.message + '\n\nOpening WooCommerce Order edit page...');
+                                window.open(data.data.order_edit_url, '_blank');
+                            } else {
+                                alert('Error: ' + (data.data?.message || 'Failed to convert order.'));
+                            }
+                        })
+                        .catch(() => {
+                            convertWcBtn.disabled = false;
+                            convertWcBtn.textContent = '🛒 Convert to WC Order';
+                            alert('An unexpected error occurred.');
+                        });
                 });
             }
 

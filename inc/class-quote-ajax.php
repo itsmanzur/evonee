@@ -15,6 +15,7 @@ class Evonee_Quote_Ajax {
         add_action('wp_ajax_eq_get_today_stats',      [$instance, 'handle_today_stats']);
         add_action('wp_ajax_eq_save_followup',        [$instance, 'handle_save_followup']);
         add_action('wp_ajax_eq_save_price_offer',     [$instance, 'handle_save_price_offer']);
+        add_action('wp_ajax_eq_convert_to_wc_order',  [$instance, 'handle_convert_to_wc_order']);
     }
 
     /**
@@ -169,6 +170,98 @@ class Evonee_Quote_Ajax {
 
         self::log_activity($submission_id, 'price_updated', 'Set price offer to $' . number_format($price, 2));
         wp_send_json_success(['message' => 'Price offer saved successfully.']);
+    }
+
+    /**
+     * AJAX: Convert Quote Submission to WooCommerce Order (Phase 1.2)
+     */
+    public function handle_convert_to_wc_order() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Unauthorized action.'], 403);
+        }
+
+        if (!check_ajax_referer('eq_convert_to_wc_order_nonce', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Security check failed.'], 403);
+        }
+
+        if (!class_exists('WooCommerce') || !function_exists('wc_create_order')) {
+            wp_send_json_error(['message' => 'WooCommerce plugin is not active. Please install and activate WooCommerce.'], 400);
+        }
+
+        $submission_id = isset($_POST['submission_id']) ? intval($_POST['submission_id']) : 0;
+        if (!$submission_id) {
+            wp_send_json_error(['message' => 'Invalid submission ID.'], 400);
+        }
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'eq_quote_submissions';
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $quote = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}eq_quote_submissions WHERE id = %d", $submission_id));
+
+        if (!$quote) {
+            wp_send_json_error(['message' => 'Quote submission not found.'], 404);
+        }
+
+        try {
+            $order = wc_create_order();
+
+            // Item Fee or Product
+            $item = new WC_Order_Item_Fee();
+            $item_name = !empty($quote->product) ? $quote->product : 'Custom Quote Package';
+            if (!empty($quote->quantity)) {
+                $item_name .= ' (Qty: ' . $quote->quantity . ')';
+            }
+            $item->set_name($item_name);
+
+            $total_price = floatval($quote->quoted_price) > 0 ? floatval($quote->quoted_price) : 0.00;
+            $item->set_total($total_price);
+            $order->add_item($item);
+
+            // Billing details
+            $name_parts = explode(' ', trim($quote->full_name), 2);
+            $first_name = $name_parts[0];
+            $last_name  = isset($name_parts[1]) ? $name_parts[1] : '';
+
+            $address = [
+                'first_name' => $first_name,
+                'last_name'  => $last_name,
+                'company'    => $quote->company,
+                'email'      => $quote->email,
+                'phone'      => $quote->phone,
+                'country'    => $quote->country,
+                'postcode'   => $quote->zip_code,
+            ];
+            $order->set_address($address, 'billing');
+
+            if (!empty($quote->project_notes)) {
+                $order->set_customer_note($quote->project_notes);
+            }
+
+            $order->calculate_totals();
+            $order->update_status('pending', 'Converted from Evonee Quote Request #' . $quote->id);
+            $order->save();
+
+            // Update submission status to approved
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+            $wpdb->update($table_name, ['status' => 'approved'], ['id' => $submission_id], ['%s'], ['%d']);
+
+            self::log_activity($submission_id, 'wc_order_created', 'Converted to WooCommerce Order #' . $order->get_id());
+
+            delete_transient('evonee_dashboard_stats');
+
+            $order_edit_url = admin_url('post.php?post=' . $order->get_id() . '&action=edit');
+            $payment_url    = $order->get_checkout_payment_url();
+
+            wp_send_json_success([
+                'message'        => 'Successfully created WooCommerce Order #' . $order->get_id(),
+                'order_id'       => $order->get_id(),
+                'order_edit_url' => $order_edit_url,
+                'payment_url'    => $payment_url,
+            ]);
+        } catch (Exception $e) {
+            wp_send_json_error(['message' => 'Failed to create WooCommerce order: ' . $e->getMessage()], 500);
+        }
     }
 
     /**
