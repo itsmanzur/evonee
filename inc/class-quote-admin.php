@@ -1377,7 +1377,7 @@ class Evonee_Quote_Admin {
                     <!-- Section 1: Quick Overview -->
                     <div class="evonee-doc-card">
                         <div class="evonee-card-header">
-                            <span class="dashicons dashicons-welcome-widgets-menus"></span>
+                            <div class="dashicons-badge"><span class="dashicons dashicons-welcome-widgets-menus"></span></div>
                             <h2>1. Quick Start & v3.0.0 Flagship Enterprise Overview</h2>
                         </div>
                         <div class="evonee-card-body">
@@ -1398,7 +1398,7 @@ class Evonee_Quote_Admin {
                     <!-- Section 2: Module Features Guide -->
                     <div class="evonee-doc-card">
                         <div class="evonee-card-header">
-                            <span class="dashicons dashicons-admin-generic"></span>
+                            <div class="dashicons-badge"><span class="dashicons dashicons-admin-generic"></span></div>
                             <h2>2. Complete v3.0 Module Guide</h2>
                         </div>
                         <div class="evonee-card-body">
@@ -1412,47 +1412,47 @@ class Evonee_Quote_Admin {
                                 </thead>
                                 <tbody>
                                     <tr>
-                                        <td><strong>📦 Module 1 — CRM</strong></td>
+                                        <td><span class="evonee-module-badge">📦 Module 1 — CRM</span></td>
                                         <td>Pagination, Internal Admin Notes, Follow-up Reminders, Activity Log Timeline, Column Sorting & Date Range Filters.</td>
                                         <td><code>Evonee Quotes ➔ Submissions</code></td>
                                     </tr>
                                     <tr>
-                                        <td><strong>✉️ Module 2 — Email</strong></td>
+                                        <td><span class="evonee-module-badge">✉️ Module 2 — Email</span></td>
                                         <td>Visual Branding Builder (Logo, Colors, Footer), Email Dispatch History Log, Quick Reply Templates (`{customer_name}`, `{product}`).</td>
                                         <td><code>Evonee Quotes ➔ Settings</code> & ➔ <code>Email Log</code></td>
                                     </tr>
                                     <tr>
-                                        <td><strong>💰 Module 3 — Pricing</strong></td>
+                                        <td><span class="evonee-module-badge">💰 Module 3 — Pricing</span></td>
                                         <td>Quoted Price Entry in CRM, 1-Click Printable PDF Quote Sheet, Tokenized Customer Accept/Decline Email Buttons.</td>
                                         <td><code>Submissions ➔ View Detail</code></td>
                                     </tr>
                                     <tr>
-                                        <td><strong>📊 Module 4 — Analytics</strong></td>
+                                        <td><span class="evonee-module-badge">📊 Module 4 — Analytics</span></td>
                                         <td>Chart.js Monthly Trends Bar Chart, Status Distribution Doughnut Chart, and Conversion Funnel Cards.</td>
                                         <td><code>Evonee Quotes ➔ Analytics & Reports</code></td>
                                     </tr>
                                     <tr>
-                                        <td><strong>🛒 Module 5 — WooCommerce</strong></td>
+                                        <td><span class="evonee-module-badge">🛒 Module 5 — WooCommerce</span></td>
                                         <td>1-Click Quote to Order Conversion, Conditional Quote Rules (Out of Stock, Guest Users), Price Hiding, and Bulk Cart Quote Request.</td>
                                         <td><code>Evonee Quotes ➔ Settings</code> & ➔ <code>Submissions</code></td>
                                     </tr>
                                     <tr>
-                                        <td><strong>🔗 Module 6 — Integrations</strong></td>
+                                        <td><span class="evonee-module-badge">🔗 Module 6 — Integrations</span></td>
                                         <td>Webhook URL endpoint (Zapier, Make, HubSpot), Native Elementor Widget, Gutenberg Block, and Slack Channel Lead Notifications.</td>
                                         <td><code>Evonee Quotes ➔ Settings</code></td>
                                     </tr>
                                     <tr>
-                                        <td><strong>🛡️ Module 7 — Security & UX</strong></td>
+                                        <td><span class="evonee-module-badge">🛡️ Module 7 — Security & UX</span></td>
                                         <td>Google reCAPTCHA v3, Multi-file Upload (up to 3 files), LocalStorage Form Draft Auto-Resume.</td>
                                         <td><code>Evonee Quotes ➔ Settings</code></td>
                                     </tr>
                                     <tr>
-                                        <td><strong>🎨 Module 8 — UI/UX</strong></td>
+                                        <td><span class="evonee-module-badge">🎨 Module 8 — UI/UX</span></td>
                                         <td>Multi-step Gradient Progress Bar, Social Proof Badge ("⚡ X quotes today"), Floating WhatsApp Button, Branded PDF Logo.</td>
                                         <td>Modal & PDF Sheet Header</td>
                                     </tr>
                                     <tr>
-                                        <td><strong>⏰ Module 9 — Automations</strong></td>
+                                        <td><span class="evonee-module-badge">⏰ Module 9 — Automations</span></td>
                                         <td>Daily WP-Cron background task for automated 3-day expiry reminder emails and expired token cleanup.</td>
                                         <td>Automated System Background Cron</td>
                                     </tr>
@@ -1464,7 +1464,7 @@ class Evonee_Quote_Admin {
                     <!-- Section 3: Elementor & Shortcode Usage -->
                     <div class="evonee-doc-card">
                         <div class="evonee-card-header">
-                            <span class="dashicons dashicons-shortcode"></span>
+                            <div class="dashicons-badge"><span class="dashicons dashicons-shortcode"></span></div>
                             <h2>3. Elementor & Shortcode Usage</h2>
                         </div>
                         <div class="evonee-card-body">
@@ -1577,7 +1577,7 @@ class Evonee_Quote_Admin {
                     <!-- Section 4: Webhook & Slack Integrations -->
                     <div class="evonee-doc-card">
                         <div class="evonee-card-header">
-                            <span class="dashicons dashicons-share-alt"></span>
+                            <div class="dashicons-badge"><span class="dashicons dashicons-share-alt"></span></div>
                             <h2>4. Webhook, Zapier & Slack Configuration</h2>
                         </div>
                         <div class="evonee-card-body">
@@ -1615,13 +1615,13 @@ class Evonee_Quote_Admin {
                         <h3>📁 Upload Safety</h3>
                         <p>Uploaded artwork files are saved securely in:</p>
                         <code>wp-content/uploads/evonee-quotes/YYYY/MM/</code>
-                        <p><small>Supports up to 3 files: AI, PDF, EPS, SVG, PNG, JPG (Max 20MB per file).</small></p>
+                        <p><small style="color:#94a3b8; display:block; margin-top:4px;">Supports up to 3 files: AI, PDF, EPS, SVG, PNG, JPG (Max 20MB per file).</small></p>
                     </div>
 
-                    <div class="evonee-sidebar-card">
-                        <h3>💬 Need Support or Customization?</h3>
-                        <p>Evonee v2.0 Enterprise Plugin Documentation & Support.</p>
-                        <a href="mailto:sales@evonee.com" class="button button-primary" style="width:100%; text-align:center; background:#6d28d9; border-color:#6d28d9;">Contact Developer Team</a>
+                    <div class="evonee-sidebar-card" style="background:linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%); border-color:#e9d5ff;">
+                        <h3 style="color:#4c1d95;">💬 Need Support or Customization?</h3>
+                        <p style="color:#6b21a8;">Evonee v3.0 Enterprise Plugin Documentation & Support.</p>
+                        <a href="mailto:sales@evonee.com" class="button button-primary button-large" style="width:100%; text-align:center; background:linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); border-color:#6d28d9; border-radius:8px; font-weight:700; margin-top:8px;">Contact Developer Team</a>
                     </div>
 
                 </div>
