@@ -2083,14 +2083,30 @@ class Evonee_Quote_Admin {
                             </ul>
                     </div>
 
-                    <!-- Section 4: Webhook & Slack Integrations -->
+                            <h3>Enterprise Features & Customer Discussion:</h3>
+                            <ul style="line-height:1.6; color:#475569; padding-left:20px;">
+                                <li><strong>✍️ Digital E-Signature:</strong> Customers can sign quote acceptances using an interactive HTML5 canvas pad on acceptance links.</li>
+                                <li><strong>💬 Quote Discussion Thread:</strong> Live messaging per quote between buyers and admin in the Customer Portal and Admin Drawer.</li>
+                                <li><strong>📄 Custom PDF Sheet Generator:</strong> Download official PDF quote sheets with Tax ID, custom accent colors, and terms.</li>
+                                <li><strong>🔔 Weekly Sales Digest:</strong> Automatic weekly sales summary email delivered every Monday via WP-Cron.</li>
+                            </ul>
+                    </div>
+
+                    <!-- Section 4: REST API, Webhook & Slack Integrations -->
                     <div class="evonee-doc-card">
                         <div class="evonee-card-header">
                             <div class="dashicons-badge"><span class="dashicons dashicons-share-alt"></span></div>
-                            <h2>4. Webhook, Zapier & Slack Configuration</h2>
+                            <h2>4. REST API, Webhook, Zapier & Slack Configuration</h2>
                         </div>
                         <div class="evonee-card-body">
-                            <p><strong>Zapier / Make / HubSpot Webhooks:</strong> Navigate to <code>Evonee Quotes ➔ Settings ➔ Section 6</code>, enable Webhooks, and paste your Target Catch Webhook URL. The plugin sends the following JSON payload on submission:</p>
+                            <p><strong>Custom WP REST API Endpoints:</strong></p>
+                            <ul>
+                                <li><code>GET /wp-json/evonee/v1/quotes</code> — Retrieve latest 50 quote submissions (Admin Auth).</li>
+                                <li><code>POST /wp-json/evonee/v1/submit</code> — Submit new quote request via REST API.</li>
+                                <li><code>GET /wp-json/evonee/v1/stats</code> — Retrieve dashboard metrics and sales statistics.</li>
+                            </ul>
+
+                            <p style="margin-top:14px;"><strong>Zapier / Make / HubSpot Webhooks:</strong> Navigate to <code>Evonee Quotes ➔ Settings ➔ Section 6</code>, enable Webhooks, and paste your Target Catch Webhook URL. The plugin sends the following JSON payload on submission:</p>
                             <pre class="evonee-pre-block">{
   "quote_id": 42,
   "full_name": "John Doe",
