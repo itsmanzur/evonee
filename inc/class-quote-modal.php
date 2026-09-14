@@ -18,20 +18,64 @@ class Evonee_Quote_Modal {
         add_shortcode('evonee_full_landing_page', [$instance, 'render_full_landing_page']); // Full demo layout if needed
 
         add_shortcode('evonee_quote_button', [$instance, 'shortcode_quote_button']);
+        add_shortcode('evonee_customer_portal', [$instance, 'render_customer_portal']);
 
         // WooCommerce Integration (Only if WooCommerce is active)
         if (class_exists('WooCommerce')) {
+            $settings = Evonee_Quote_Admin::get_settings();
             add_action('woocommerce_after_shop_loop_item', [$instance, 'render_wc_loop_button'], 15);
             add_action('wp', [$instance, 'wc_quote_only_mode']);
+
+            if (!empty($settings['wc_hide_price']) && $settings['wc_hide_price'] === '1') {
+                add_filter('woocommerce_get_price_html', [$instance, 'filter_wc_price_html'], 10, 2);
+            }
+
+            if (!empty($settings['enable_cart_quote']) && $settings['enable_cart_quote'] === '1') {
+                add_action('woocommerce_proceed_to_checkout', [$instance, 'render_wc_cart_quote_button'], 20);
+                add_action('woocommerce_after_checkout_form', [$instance, 'render_wc_cart_quote_button'], 20);
+            }
         }
     }
 
     /**
+     * Check if WooCommerce "Quote Only" mode applies based on settings and conditions
+     */
+    public function should_apply_wc_quote_mode($product = null) {
+        $settings = Evonee_Quote_Admin::get_settings();
+        if (empty($settings['enable_wc_quote_only']) || $settings['enable_wc_quote_only'] !== '1') {
+            return false;
+        }
+
+        $condition = isset($settings['wc_quote_condition']) ? $settings['wc_quote_condition'] : 'all';
+
+        if ($condition === 'out_of_stock') {
+            if ($product && $product->is_in_stock()) {
+                return false;
+            }
+        } elseif ($condition === 'guests') {
+            if (is_user_logged_in()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Filter WooCommerce Product Price HTML
+     */
+    public function filter_wc_price_html($price, $product) {
+        return '<span class="eq-price-hidden" style="color:#6d28d9; font-weight:700; font-size:14px;">Price Available Upon Quote</span>';
+    }
+
+    /**
      * WooCommerce "Quote Only" Mode (Module 5)
+     * FIX BUG #14: Removed reliance on global $product in 'wp' hook
+     * which is not reliably set outside of the loop
      */
     public function wc_quote_only_mode() {
-        $settings = Evonee_Quote_Admin::get_settings();
-        if (!empty($settings['enable_wc_quote_only']) && $settings['enable_wc_quote_only'] === '1') {
+        // Check mode without product context (product-specific check happens in loop hooks)
+        if ($this->should_apply_wc_quote_mode()) {
             remove_action('woocommerce_after_shop_loop_item', 'woocommerce_template_loop_add_to_cart', 10);
             remove_action('woocommerce_single_product_summary', 'woocommerce_template_single_add_to_cart', 30);
             add_action('woocommerce_single_product_summary', [$this, 'render_wc_single_quote_btn'], 30);
@@ -45,6 +89,33 @@ class Evonee_Quote_Modal {
         $image_url = $image_id ? wp_get_attachment_image_url($image_id, 'large') : '';
         $desc      = wp_strip_all_tags($product->get_short_description() ?: $product->get_description());
         echo self::kses_button(self::quote_button($product->get_name(), $image_url, $desc, 'Request Custom Quote', 'eq-btn-primary button-large'));
+    }
+
+    /**
+     * Render Bulk Cart Quote Request Button for Cart & Checkout pages
+     */
+    public function render_wc_cart_quote_button() {
+        if (!function_exists('WC') || !WC()->cart || WC()->cart->is_empty()) return;
+
+        $cart_items = WC()->cart->get_cart();
+        $item_names = [];
+        $total_qty  = 0;
+
+        foreach ($cart_items as $cart_item) {
+            $prod = $cart_item['data'];
+            if ($prod) {
+                $qty = $cart_item['quantity'];
+                $total_qty += $qty;
+                $item_names[] = $prod->get_name() . ' (x' . $qty . ')';
+            }
+        }
+
+        $title = 'Bulk Cart Quote Request (' . count($cart_items) . ' items, total ' . $total_qty . ' pcs)';
+        $desc  = 'Cart Items Summary: ' . implode(', ', $item_names);
+
+        echo '<div style="margin-top:14px; margin-bottom:14px; text-align:center;">';
+        echo self::kses_button(self::quote_button($title, '', $desc, '📋 Request B2B Quote for Cart', 'eq-btn-primary button-large', 'style="background:linear-gradient(135deg, #ea580c 0%, #c2410c 100%); width:100%; border-radius:6px; font-weight:700; padding:12px 20px;"'));
+        echo '</div>';
     }
 
     /**
@@ -146,6 +217,7 @@ class Evonee_Quote_Modal {
         wp_localize_script('evonee-modal-js', 'eqQuoteData', [
             'ajaxUrl'                => admin_url('admin-ajax.php'),
             'nonce'                  => wp_create_nonce('eq_submit_quote'),
+            'messageNonce'           => wp_create_nonce('eq_message_nonce'),
             'recaptchaSiteKey'       => $recaptcha_site_key,
             'placeholder'            => self::get_svg_placeholder(),
             'maxUploadSize'          => $max_upload_bytes,
@@ -153,6 +225,12 @@ class Evonee_Quote_Modal {
             'basePrice'              => floatval($settings['base_quote_price'] ?? 50.00),
             'pricePerItem'           => floatval($settings['price_per_item'] ?? 1.25),
             'enableEstimator'        => isset($settings['enable_price_estimator']) ? $settings['enable_price_estimator'] : '1',
+            'currencySymbol'         => !empty($settings['currency_symbol']) ? $settings['currency_symbol'] : '$',
+            'currencyCode'           => !empty($settings['currency_code']) ? $settings['currency_code'] : 'USD',
+            'currencyPos'            => !empty($settings['currency_pos']) ? $settings['currency_pos'] : 'left',
+            'decimalSep'             => $settings['decimal_separator'] ?? '.',
+            'thousandSep'            => $settings['thousand_separator'] ?? ',',
+            'decimals'               => isset($settings['decimals']) ? intval($settings['decimals']) : 2,
         ]);
     }
 
@@ -204,6 +282,210 @@ class Evonee_Quote_Modal {
         ], $atts);
 
         return self::kses_button(self::quote_button($atts['product'], $atts['image'], $atts['description'], $atts['text'], $atts['class']));
+    }
+
+    /**
+     * Shortcode: [evonee_customer_portal] (Phase 3.1)
+     * Renders front-end customer quote history portal
+     */
+    public function render_customer_portal($atts) {
+        global $wpdb;
+        $current_user = wp_get_current_user();
+        $user_email   = is_user_logged_in() ? $current_user->user_email : '';
+
+        if (isset($_POST['eq_search_email']) && check_admin_referer('eq_portal_search_nonce')) {
+            $user_email = sanitize_email(wp_unslash($_POST['eq_search_email']));
+        }
+
+        ob_start();
+        ?>
+        <div class="eq-customer-portal-wrap" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:24px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05); font-family:sans-serif;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:2px solid #f1f5f9; padding-bottom:14px;">
+                <div>
+                    <h2 style="margin:0; font-size:20px; color:#4c1d95;">📜 My Quote Requests Portal</h2>
+                    <p style="margin:4px 0 0; font-size:13px; color:#64748b;">View and track your submitted custom quote requests, price offers, and acceptance links.</p>
+                </div>
+            </div>
+
+            <?php if (empty($user_email)): ?>
+                <form method="post" style="max-width:480px; margin:20px 0;">
+                    <?php wp_nonce_field('eq_portal_search_nonce'); ?>
+                    <label style="font-weight:700; display:block; margin-bottom:6px; font-size:13px;">Enter your email to find your submitted quotes:</label>
+                    <div style="display:flex; gap:8px;">
+                        <input type="email" name="eq_search_email" placeholder="your@email.com" required style="flex:1; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px;">
+                        <button type="submit" style="background:#6d28d9; color:#fff; border:none; padding:8px 16px; border-radius:6px; font-weight:700; cursor:pointer;">Search Quotes</button>
+                    </div>
+                </form>
+            <?php else: ?>
+                <?php
+                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+                $quotes = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}eq_quote_submissions WHERE email = %s ORDER BY id DESC LIMIT 50", $user_email));
+                ?>
+                <p style="font-size:13px; color:#475569; margin-bottom:16px;">Showing quote submissions for: <strong><?php echo esc_html($user_email); ?></strong></p>
+
+                <?php if (empty($quotes)): ?>
+                    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:20px; text-align:center; color:#64748b;">
+                        No quote submissions found for this email address.
+                    </div>
+                <?php else: ?>
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                            <thead>
+                                <tr style="background:#f8fafc; border-bottom:2px solid #e2e8f0; text-align:left;">
+                                    <th style="padding:10px;">ID</th>
+                                    <th style="padding:10px;">Date</th>
+                                    <th style="padding:10px;">Product Requested</th>
+                                    <th style="padding:10px;">Qty</th>
+                                    <th style="padding:10px;">Quoted Price</th>
+                                    <th style="padding:10px;">Status</th>
+                                    <th style="padding:10px;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($quotes as $q): 
+                                    $status_bg = '#16a34a';
+                                    if ($q->status === 'quoted') $status_bg = '#2563eb';
+                                    if ($q->status === 'approved') $status_bg = '#7c3aed';
+                                    if ($q->status === 'rejected') $status_bg = '#dc2626';
+                                ?>
+                                    <tr style="border-bottom:1px solid #f1f5f9;">
+                                        <td style="padding:10px; font-weight:700;">#<?php echo esc_html($q->id); ?></td>
+                                        <td style="padding:10px; color:#64748b;"><?php echo esc_html(gmdate('Y-m-d', strtotime($q->created_at))); ?></td>
+                                        <td style="padding:10px; font-weight:600; color:#1e1b2e;"><?php echo esc_html($q->product); ?></td>
+                                        <td style="padding:10px;"><?php echo esc_html($q->quantity); ?></td>
+                                        <td style="padding:10px; font-weight:700; color:#16a34a;"><?php echo floatval($q->quoted_price) > 0 ? '$' . number_format($q->quoted_price, 2) : 'Pending Offer'; ?></td>
+                                        <td style="padding:10px;">
+                                            <span style="background:<?php echo esc_attr($status_bg); ?>; color:#fff; padding:3px 8px; border-radius:12px; font-size:11px; text-transform:uppercase; font-weight:700;"><?php echo esc_html($q->status); ?></span>
+                                        </td>
+                                        <td style="padding:10px;">
+                                            <?php 
+                                            $pdf_dl_link = add_query_arg(['eq_action' => 'download_pdf', 'id' => $q->id, 'token' => $q->acceptance_token], home_url());
+                                            if (!empty($q->acceptance_token) && $q->status === 'quoted'): 
+                                                $accept_link  = add_query_arg(['eq_action' => 'accept_quote', 'token' => $q->acceptance_token], home_url());
+                                                $decline_link = add_query_arg(['eq_action' => 'decline_quote', 'token' => $q->acceptance_token], home_url());
+                                            ?>
+                                                <a href="<?php echo esc_url($accept_link); ?>" style="background:#16a34a; color:#fff; text-decoration:none; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; margin-right:4px;">Accept</a>
+                                                <a href="<?php echo esc_url($decline_link); ?>" style="background:#dc2626; color:#fff; text-decoration:none; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; margin-right:4px;">Decline</a>
+                                            <?php endif; ?>
+                                            <?php if (!empty($q->quoted_price) && floatval($q->quoted_price) > 0): ?>
+                                                <a href="<?php echo esc_url($pdf_dl_link); ?>" target="_blank" style="background:#6d28d9; color:#fff; text-decoration:none; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; margin-right:4px;">📄 PDF</a>
+                                            <?php endif; ?>
+                                            <button type="button" class="eq-portal-chat-toggle" data-id="<?php echo esc_attr($q->id); ?>" style="background:#0284c7; color:#fff; border:none; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:700; cursor:pointer;">💬 Chat</button>
+                                        </td>
+                                    </tr>
+                                    <tr id="eq-chat-row-<?php echo esc_attr($q->id); ?>" style="display:none; background:#faf5ff;">
+                                        <td colspan="7" style="padding:14px; border-bottom:1px solid #e9d5ff;">
+                                            <h4 style="margin:0 0 8px; font-size:12px; color:#6d28d9;">💬 Discussion Thread for Quote #<?php echo esc_html($q->id); ?></h4>
+                                            <div id="eq-portal-msgs-<?php echo esc_attr($q->id); ?>" style="max-height:140px; overflow-y:auto; font-size:12px; background:#fff; border:1px solid #e9d5ff; padding:10px; border-radius:6px; margin-bottom:8px;">
+                                                <em>Loading...</em>
+                                            </div>
+                                            <div style="display:flex; gap:6px;">
+                                                <input type="text" id="eq-portal-input-<?php echo esc_attr($q->id); ?>" placeholder="Type your response..." style="flex:1; padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px;">
+                                                <button type="button" class="eq-portal-send-btn" data-id="<?php echo esc_attr($q->id); ?>" style="background:#6d28d9; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">Send Message</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <script>
+                    document.addEventListener('DOMContentLoaded', function() {
+                        const ajaxUrl = '<?php echo esc_url(admin_url('admin-ajax.php')); ?>';
+                        // FIX BUG #2 & #3: Use the dedicated message nonce for AJAX security
+                        const msgNonce = (typeof eqQuoteData !== 'undefined' && eqQuoteData.messageNonce)
+                            ? eqQuoteData.messageNonce
+                            : '<?php echo esc_js(wp_create_nonce('eq_message_nonce')); ?>';
+
+                        // FIX BUG #10: Safe HTML builder to prevent XSS via message content
+                        function escHtml(str) {
+                            const d = document.createElement('div');
+                            d.appendChild(document.createTextNode(str));
+                            return d.innerHTML;
+                        }
+
+                        function buildMessageHtml(m) {
+                            const isAdmin = m.sender_type === 'admin';
+                            const bg      = isAdmin ? '#faf5ff' : '#f0fdf4';
+                            const border  = isAdmin ? '#e9d5ff' : '#bbf7d0';
+                            const label   = isAdmin ? '🛡️ Support Team' : '👤 You';
+                            // FIX BUG #10: Use escHtml() for message content — prevents XSS
+                            return `<div style="background:${bg}; border:1px solid ${border}; padding:6px 10px; border-radius:6px; margin-bottom:6px;">
+                                <strong>${label}</strong> <small style="color:#94a3b8;">${escHtml(m.created_at)}</small>
+                                <div style="margin-top:2px; color:#1e293b;">${escHtml(m.message)}</div>
+                            </div>`;
+                        }
+
+                        function fetchPortalMsgs(subId) {
+                            const container = document.getElementById('eq-portal-msgs-' + subId);
+                            if (!container) return;
+                            // FIX BUG #3: Include nonce in message fetch request
+                            fetch(ajaxUrl + '?action=eq_get_messages&submission_id=' + subId + '&nonce=' + encodeURIComponent(msgNonce))
+                                .then(r => r.json())
+                                .then(data => {
+                                    if (data.success && data.data && data.data.messages && data.data.messages.length > 0) {
+                                        // FIX BUG #10: Use safe buildMessageHtml() instead of direct template interpolation
+                                        container.innerHTML = data.data.messages.map(buildMessageHtml).join('');
+                                        container.scrollTop = container.scrollHeight;
+                                    } else {
+                                        container.innerHTML = '<span style="color:#94a3b8; font-style:italic;">No discussion messages yet. Start the conversation below!</span>';
+                                    }
+                                });
+                        }
+
+                        document.querySelectorAll('.eq-portal-chat-toggle').forEach(btn => {
+                            btn.addEventListener('click', function() {
+                                const subId = this.getAttribute('data-id');
+                                const row = document.getElementById('eq-chat-row-' + subId);
+                                if (row) {
+                                    const isHidden = row.style.display === 'none';
+                                    row.style.display = isHidden ? 'table-row' : 'none';
+                                    if (isHidden) fetchPortalMsgs(subId);
+                                }
+                            });
+                        });
+
+                        document.querySelectorAll('.eq-portal-send-btn').forEach(btn => {
+                            btn.addEventListener('click', function() {
+                                const subId = this.getAttribute('data-id');
+                                const input = document.getElementById('eq-portal-input-' + subId);
+                                const msg   = input ? input.value.trim() : '';
+                                if (!msg) return;
+
+                                btn.disabled = true;
+                                btn.textContent = 'Sending...';
+
+                                const fd = new FormData();
+                                fd.append('action', 'eq_send_message');
+                                fd.append('submission_id', subId);
+                                fd.append('sender_type', 'customer');
+                                fd.append('message', msg);
+                                // FIX BUG #2: Include nonce in send message request
+                                fd.append('nonce', msgNonce);
+
+                                fetch(ajaxUrl, { method: 'POST', body: fd })
+                                    .then(r => r.json())
+                                    .then(data => {
+                                        btn.disabled = false;
+                                        btn.textContent = 'Send Message';
+                                        if (data.success) {
+                                            if (input) input.value = '';
+                                            fetchPortalMsgs(subId);
+                                        } else {
+                                            alert(data.data ? data.data.message : 'Failed to send message.');
+                                        }
+                                    })
+                                    .catch(() => { btn.disabled = false; btn.textContent = 'Send Message'; });
+                            });
+                        });
+                    });
+                    </script>
+                <?php endif; ?>
+            <?php endif; ?>
+        </div>
+        <?php
+        return ob_get_clean();
     }
 
     /**
@@ -591,22 +873,44 @@ class Evonee_Quote_Modal {
                                         $star = $is_req ? ' <span class="eq-req">*</span>' : '';
                                 ?>
                                         <div class="eq-field">
-                                            <label for="<?php echo esc_attr($f_name); ?>"><?php echo esc_html($cf['label']); ?><?php echo wp_kses_post($star); ?></label>
-                                            <?php if ($cf['type'] === 'select'): 
-                                                $opts = array_map('trim', explode(',', $cf['options']));
-                                            ?>
-                                                <select id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" <?php echo esc_attr($req_attr); ?>>
-                                                    <option value="" disabled selected>Select <?php echo esc_html($cf['label']); ?></option>
-                                                    <?php foreach ($opts as $opt): ?>
-                                                        <option value="<?php echo esc_attr($opt); ?>"><?php echo esc_html($opt); ?></option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                            <?php elseif ($cf['type'] === 'textarea'): ?>
-                                                <textarea id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" rows="2" placeholder="Enter <?php echo esc_attr($cf['label']); ?>" <?php echo esc_attr($req_attr); ?>></textarea>
-                                            <?php elseif ($cf['type'] === 'number'): ?>
-                                                <input type="number" id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" placeholder="Enter <?php echo esc_attr($cf['label']); ?>" <?php echo esc_attr($req_attr); ?>>
+                                            <?php if ($cf['type'] === 'checkbox'): ?>
+                                                <div class="eq-checkbox-wrap" style="margin-top:6px;">
+                                                    <label class="eq-checkbox">
+                                                        <input type="checkbox" id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" value="1" <?php echo esc_attr($req_attr); ?>>
+                                                        <span><?php echo esc_html($cf['label']); ?><?php echo wp_kses_post($star); ?></span>
+                                                    </label>
+                                                </div>
                                             <?php else: ?>
-                                                <input type="text" id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" placeholder="Enter <?php echo esc_attr($cf['label']); ?>" <?php echo esc_attr($req_attr); ?>>
+                                                <label for="<?php echo esc_attr($f_name); ?>"><?php echo esc_html($cf['label']); ?><?php echo wp_kses_post($star); ?></label>
+                                                <?php if ($cf['type'] === 'select'): 
+                                                    $opts = array_map('trim', explode(',', $cf['options'] ?? ''));
+                                                ?>
+                                                    <select id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" <?php echo esc_attr($req_attr); ?>>
+                                                        <option value="" disabled selected>Select <?php echo esc_html($cf['label']); ?></option>
+                                                        <?php foreach ($opts as $opt): ?>
+                                                            <option value="<?php echo esc_attr($opt); ?>"><?php echo esc_html($opt); ?></option>
+                                                        <?php endforeach; ?>
+                                                    </select>
+                                                <?php elseif ($cf['type'] === 'radio'): 
+                                                    $opts = array_map('trim', explode(',', $cf['options'] ?? ''));
+                                                ?>
+                                                    <div style="display:flex; flex-wrap:wrap; gap:12px; margin-top:4px;">
+                                                        <?php foreach ($opts as $ridx => $opt): ?>
+                                                            <label style="font-size:13px; font-weight:500; display:flex; align-items:center; gap:5px; cursor:pointer;">
+                                                                <input type="radio" name="<?php echo esc_attr($f_name); ?>" value="<?php echo esc_attr($opt); ?>" <?php echo esc_attr($req_attr); ?>>
+                                                                <span><?php echo esc_html($opt); ?></span>
+                                                            </label>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                <?php elseif ($cf['type'] === 'date'): ?>
+                                                    <input type="date" id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" <?php echo esc_attr($req_attr); ?>>
+                                                <?php elseif ($cf['type'] === 'textarea'): ?>
+                                                    <textarea id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" rows="2" placeholder="Enter <?php echo esc_attr($cf['label']); ?>" <?php echo esc_attr($req_attr); ?>></textarea>
+                                                <?php elseif ($cf['type'] === 'number'): ?>
+                                                    <input type="number" id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" placeholder="Enter <?php echo esc_attr($cf['label']); ?>" <?php echo esc_attr($req_attr); ?>>
+                                                <?php else: ?>
+                                                    <input type="text" id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" placeholder="Enter <?php echo esc_attr($cf['label']); ?>" <?php echo esc_attr($req_attr); ?>>
+                                                <?php endif; ?>
                                             <?php endif; ?>
                                         </div>
                                 <?php 
@@ -688,6 +992,39 @@ class Evonee_Quote_Modal {
                                 </div>
                             </div>
                         </div>
+
+                        <?php
+                        $show_tiered = isset($settings['enable_tiered_pricing']) && $settings['enable_tiered_pricing'] === '1' && !empty($settings['tiered_price_breaks']);
+                        if ($show_tiered):
+                            $raw_breaks = explode("\n", trim($settings['tiered_price_breaks']));
+                        ?>
+                        <!-- Card: Volume Tiered Pricing Table (Step 4) -->
+                        <div class="eq-card eq-card-tiered-pricing">
+                            <h4 class="eq-card-title">📊 Volume Discount Breaks</h4>
+                            <table style="width:100%; border-collapse:collapse; font-size:12px; margin-top:8px;">
+                                <thead>
+                                    <tr style="background:#f8fafc; border-bottom:1px solid #e2e8f0; text-align:left;">
+                                        <th style="padding:6px;">Quantity</th>
+                                        <th style="padding:6px; text-align:right;">Unit Price</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($raw_breaks as $rbreak):
+                                        $parts = explode('|', trim($rbreak));
+                                        if (count($parts) === 2):
+                                    ?>
+                                        <tr style="border-bottom:1px solid #f1f5f9;">
+                                            <td style="padding:6px; font-weight:600; color:#475569;"><?php echo esc_html(trim($parts[0])); ?>+ pcs</td>
+                                            <td style="padding:6px; text-align:right; font-weight:700; color:#6d28d9;"><?php echo esc_html(Evonee_Quote_Admin::format_price(floatval($parts[1]), $settings)); ?></td>
+                                        </tr>
+                                    <?php
+                                        endif;
+                                    endforeach;
+                                    ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <?php endif; ?>
 
                         <!-- Card 2: Popular Options -->
                         <div class="eq-card">

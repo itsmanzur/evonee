@@ -18,8 +18,8 @@ class Evonee_Quote_Admin {
         }
         wp_enqueue_style('evonee-admin-css', EVONEE_PLUGIN_URL . 'assets/css/admin.css', [], EVONEE_VERSION);
 
-        if (strpos($hook, 'evonee-analytics') !== false) {
-            wp_enqueue_script('chartjs', 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js', [], '4.4.1', true);
+        if (strpos($hook, 'evonee-analytics') !== false || strpos($hook, 'evonee-quotes') !== false || strpos($hook, 'evonee-dashboard') !== false) {
+            wp_enqueue_script('chartjs', EVONEE_PLUGIN_URL . 'assets/js/chart.min.js', [], '4.4.1', true);
         }
     }
 
@@ -29,9 +29,18 @@ class Evonee_Quote_Admin {
             'Evonee Quotes',
             'manage_options',
             'evonee-quotes',
-            [$this, 'render_submissions_page'],
+            [$this, 'render_dashboard_page'],
             'dashicons-clipboard',
             30
+        );
+
+        add_submenu_page(
+            'evonee-quotes',
+            'Executive Dashboard',
+            'Dashboard',
+            'manage_options',
+            'evonee-quotes',
+            [$this, 'render_dashboard_page']
         );
 
         add_submenu_page(
@@ -39,7 +48,7 @@ class Evonee_Quote_Admin {
             'Quote Submissions',
             'Submissions',
             'manage_options',
-            'evonee-quotes',
+            'evonee-submissions',
             [$this, 'render_submissions_page']
         );
 
@@ -81,6 +90,12 @@ class Evonee_Quote_Admin {
         $defaults = [
             'sales_email'              => 'sales@evonee.com',
             'currency_symbol'          => '$',
+            'currency_code'            => 'USD',
+            'currency_pos'             => 'left',
+            'decimal_separator'        => '.',
+            'thousand_separator'       => ',',
+            'decimals'                 => '2',
+            'delete_data_on_uninstall' => '0',
             'enable_price_calc'        => '1',
             'enable_pdf_quote'         => '1',
             'enable_analytics'         => '1',
@@ -115,12 +130,50 @@ class Evonee_Quote_Admin {
             'enable_woocommerce_button'=> '1',
             'woo_button_text'          => 'Request a Quote',
             'enable_wc_quote_only'     => '0',
+            'wc_quote_condition'       => 'all',
+            'wc_hide_price'            => '0',
+            'enable_cart_quote'        => '0',
             'products_grid_limit'      => '12',
             'show_products_title'      => '0',
+            // Step 3 & 4 Enterprise Settings
+            'pdf_company_name'         => 'Evonee Promotional Products',
+            'pdf_tax_id'               => '',
+            'pdf_accent_color'         => '#6d28d9',
+            'pdf_terms_text'           => "1. Includes Free Digital Proof & Mockup preview before production.\n2. Price offer valid for 30 days from quote issue date.\n3. Standard production & delivery timeline applies upon artwork approval.",
+            'enable_tiered_pricing'    => '1',
+            'tiered_price_breaks'      => "50|5.00\n100|4.50\n500|3.80\n1000|3.20",
         ];
 
         $saved = get_option('evonee_quote_settings', []);
         return wp_parse_args($saved, $defaults);
+    }
+
+    /**
+     * Centralized price formatter with multi-currency & locale support
+     */
+    public static function format_price($amount, $settings = null) {
+        if ($settings === null) {
+            $settings = self::get_settings();
+        }
+        $symbol   = !empty($settings['currency_symbol']) ? $settings['currency_symbol'] : '$';
+        $pos      = !empty($settings['currency_pos']) ? $settings['currency_pos'] : 'left';
+        $decimals = isset($settings['decimals']) ? intval($settings['decimals']) : 2;
+        $dec_sep  = isset($settings['decimal_separator']) ? $settings['decimal_separator'] : '.';
+        $th_sep   = isset($settings['thousand_separator']) ? $settings['thousand_separator'] : ',';
+
+        $formatted_number = number_format(floatval($amount), $decimals, $dec_sep, $th_sep);
+
+        switch ($pos) {
+            case 'right':
+                return $formatted_number . $symbol;
+            case 'left_space':
+                return $symbol . ' ' . $formatted_number;
+            case 'right_space':
+                return $formatted_number . ' ' . $symbol;
+            case 'left':
+            default:
+                return $symbol . $formatted_number;
+        }
     }
 
     /**
@@ -211,9 +264,401 @@ class Evonee_Quote_Admin {
             <!-- Footer -->
             <div style="margin-top:12px; display:flex; justify-content:space-between; align-items:center;">
                 <span style="font-size:11px; color:#9ca3af;">Total: <strong><?php echo esc_html($total); ?></strong> submissions</span>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-quotes')); ?>" class="button button-primary button-small" style="background:#6d28d9; border-color:#6d28d9;">View All &rarr;</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-submissions')); ?>" class="button button-primary button-small" style="background:#6d28d9; border-color:#6d28d9;">View All &rarr;</a>
             </div>
         </div>
+        <?php
+    }
+
+    /**
+     * Render Evonee Executive Dashboard Page (v3.1 Command Center)
+     */
+    public function render_dashboard_page() {
+        // Fallback for direct query links to render Submissions page seamlessly
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        if (!empty($_GET['s']) || !empty($_GET['status_filter']) || !empty($_GET['action']) || !empty($_GET['paged']) || isset($_GET['id']) || (isset($_GET['view']) && $_GET['view'] === 'submissions')) {
+            $this->render_submissions_page();
+            return;
+        }
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'eq_quote_submissions';
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+        if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table_name)) !== $table_name) {
+            Evonee_Quote_Ajax::create_submissions_table();
+        }
+
+        $stats = get_transient('evonee_dashboard_stats');
+        if (false === $stats) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $total_count     = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions");
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $new_count       = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions WHERE status = %s", 'new'));
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $pending_count   = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions WHERE status = %s", 'pending'));
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $quoted_count    = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions WHERE status = %s", 'quoted'));
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $approved_count  = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions WHERE status = %s", 'approved'));
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $completed_count = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions WHERE status = %s", 'completed'));
+
+            // Total Quoted Revenue Value ($)
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $total_pipeline_val = (float) $wpdb->get_var("SELECT SUM(quoted_price) FROM {$wpdb->prefix}eq_quote_submissions WHERE quoted_price IS NOT NULL AND quoted_price > 0");
+
+            // Overdue / Urgent Action Needed Count
+            $today = current_time('Y-m-d');
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $urgent_count = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions WHERE (status IN ('new', 'pending') AND created_at <= %s) OR (follow_up_date IS NOT NULL AND follow_up_date <= %s)",
+                wp_date('Y-m-d H:i:s', time() - (2 * DAY_IN_SECONDS)),
+                $today
+            ));
+
+            // Recent 5 Submissions
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $recent_quotes = $wpdb->get_results("SELECT id, full_name, email, product, quantity, quoted_price, status, created_at FROM {$wpdb->prefix}eq_quote_submissions ORDER BY id DESC LIMIT 5");
+
+            // Monthly Trends (Last 6 Months)
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $monthly_trends = $wpdb->get_results("
+                SELECT DATE_FORMAT(created_at, '%b %Y') as month_label, COUNT(*) as total 
+                FROM {$wpdb->prefix}eq_quote_submissions 
+                GROUP BY DATE_FORMAT(created_at, '%Y-%m') 
+                ORDER BY created_at ASC LIMIT 6
+            ");
+
+            // Top Requested Products (Top 3)
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $top_products = $wpdb->get_results("
+                SELECT product, COUNT(*) as total
+                FROM {$wpdb->prefix}eq_quote_submissions
+                GROUP BY product
+                ORDER BY total DESC
+                LIMIT 3
+            ");
+
+            $stats = compact('total_count', 'new_count', 'pending_count', 'quoted_count', 'approved_count', 'completed_count', 'total_pipeline_val', 'urgent_count', 'recent_quotes', 'monthly_trends', 'top_products');
+            set_transient('evonee_dashboard_stats', $stats, 10 * MINUTE_IN_SECONDS);
+        } else {
+            $total_count        = $stats['total_count'];
+            $new_count          = $stats['new_count'];
+            $pending_count      = $stats['pending_count'];
+            $quoted_count       = $stats['quoted_count'];
+            $approved_count     = $stats['approved_count'];
+            $completed_count    = $stats['completed_count'];
+            $total_pipeline_val = $stats['total_pipeline_val'];
+            $urgent_count       = $stats['urgent_count'];
+            $recent_quotes      = $stats['recent_quotes'];
+            $monthly_trends     = $stats['monthly_trends'];
+            $top_products       = $stats['top_products'];
+        }
+
+        $won_deals = $approved_count + $completed_count;
+        $win_rate  = $total_count > 0 ? round(($won_deals / $total_count) * 100, 1) : 0;
+        $settings  = self::get_settings();
+        $curr_sym  = esc_html($settings['currency_symbol'] ?? '$');
+
+        // System Health Diagnostics Checks
+        $cron_active     = wp_next_scheduled('evonee_daily_quote_cron') ? true : false;
+        $wc_active       = class_exists('WooCommerce');
+        $recaptcha_ready = (!empty($settings['enable_recaptcha']) && !empty($settings['recaptcha_site_key']));
+        $webhook_ready   = (!empty($settings['enable_webhook']) && !empty($settings['webhook_url']));
+        $slack_ready     = (!empty($settings['enable_slack']) && !empty($settings['slack_webhook_url']));
+        $user_name       = wp_get_current_user()->display_name ?: 'Admin';
+        ?>
+        <div class="wrap evonee-admin-wrap">
+            <!-- Hero Header -->
+            <div class="evonee-docs-header" style="background: linear-gradient(135deg, #0f172a 0%, #3b0764 50%, #6d28d9 100%); padding:28px 32px; border-radius:14px; margin-bottom:24px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+                    <div>
+                        <h1 style="color:#ffffff; font-size:26px; font-weight:800; margin:0 0 6px; display:flex; align-items:center; gap:10px;">
+                            ⚡ Evonee Executive Command Center
+                        </h1>
+                        <p class="subtitle" style="color:#cbd5e1; font-size:14px; margin:0;">
+                            Welcome back, <strong><?php echo esc_html($user_name); ?></strong>! Overview of your B2B quotation pipeline, automated reminders, and revenue metrics.
+                        </p>
+                    </div>
+                    <div class="evonee-docs-brand" style="text-align:right;">
+                        <span style="background:rgba(255,255,255,0.15); backdrop-filter:blur(8px); color:#ffffff; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:700; border:1px solid rgba(255,255,255,0.2);">
+                            v1.0.0 Release Edition
+                        </span>
+                        <div style="font-size:11px; color:#cbd5e1; margin-top:6px;">📅 <?php echo esc_html(wp_date('F j, Y')); ?></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Urgent Action Alert Banner -->
+            <?php if ($urgent_count > 0): ?>
+                <div class="evonee-dash-alert" style="background:#fff7ed; border:1px solid #ffedd5; border-left:4px solid #f97316; border-radius:10px; padding:14px 20px; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; gap:16px;">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <span style="font-size:24px;">⚠️</span>
+                        <div>
+                            <strong style="color:#9a3412; font-size:14px;">Urgent Lead Action Required!</strong>
+                            <p style="color:#c2410c; font-size:13px; margin:2px 0 0;">You have <strong><?php echo esc_html($urgent_count); ?></strong> quote request(s) awaiting response or overdue for follow-up.</p>
+                        </div>
+                    </div>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-submissions&date_range=followup_due')); ?>" class="button button-primary" style="background:#ea580c; border-color:#ea580c; font-weight:700; border-radius:6px; white-space:nowrap;">View Pending Quotes &rarr;</a>
+                </div>
+            <?php endif; ?>
+
+            <!-- KPI Metric Cards Grid -->
+            <div class="evonee-metrics-grid" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:18px; margin-bottom:24px;">
+                <div class="evonee-stat-card" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:20px; display:flex; align-items:center; gap:16px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
+                    <div class="evonee-stat-icon" style="background:#faf5ff; color:#6d28d9; font-size:24px; width:52px; height:52px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">📥</div>
+                    <div>
+                        <div class="evonee-stat-val" style="font-size:26px; font-weight:800; color:#0f172a; line-height:1.2;"><?php echo esc_html(number_format($total_count)); ?></div>
+                        <div class="evonee-stat-lbl" style="font-size:12px; color:#64748b; font-weight:600; margin-top:2px;">Total Quotes Received</div>
+                    </div>
+                </div>
+
+                <div class="evonee-stat-card" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:20px; display:flex; align-items:center; gap:16px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
+                    <div class="evonee-stat-icon" style="background:#fff7ed; color:#ea580c; font-size:24px; width:52px; height:52px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">⏳</div>
+                    <div>
+                        <div class="evonee-stat-val" style="font-size:26px; font-weight:800; color:#ea580c; line-height:1.2;"><?php echo esc_html(number_format($new_count + $pending_count)); ?></div>
+                        <div class="evonee-stat-lbl" style="font-size:12px; color:#64748b; font-weight:600; margin-top:2px;">Action Needed (New / Pending)</div>
+                    </div>
+                </div>
+
+                <div class="evonee-stat-card" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:20px; display:flex; align-items:center; gap:16px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
+                    <div class="evonee-stat-icon" style="background:#eff6ff; color:#2563eb; font-size:24px; width:52px; height:52px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">💰</div>
+                    <div>
+                        <div class="evonee-stat-val" style="font-size:26px; font-weight:800; color:#2563eb; line-height:1.2;"><?php echo esc_html($curr_sym) . esc_html(number_format($total_pipeline_val, 2)); ?></div>
+                        <div class="evonee-stat-lbl" style="font-size:12px; color:#64748b; font-weight:600; margin-top:2px;">Gross Quoted Pipeline</div>
+                    </div>
+                </div>
+
+                <div class="evonee-stat-card" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:20px; display:flex; align-items:center; gap:16px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
+                    <div class="evonee-stat-icon" style="background:#f0fdf4; color:#16a34a; font-size:24px; width:52px; height:52px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">🏆</div>
+                    <div>
+                        <div class="evonee-stat-val" style="font-size:26px; font-weight:800; color:#16a34a; line-height:1.2;"><?php echo esc_html(number_format($won_deals)); ?></div>
+                        <div class="evonee-stat-lbl" style="font-size:12px; color:#64748b; font-weight:600; margin-top:2px;">Won Deals (<?php echo esc_html($win_rate); ?>% Win Rate)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Action Launcher Grid -->
+            <div class="evonee-doc-card" style="margin-bottom:24px;">
+                <div class="evonee-card-header" style="padding:14px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0; border-top-left-radius:12px; border-top-right-radius:12px; display:flex; align-items:center; gap:8px;">
+                    <span class="dashicons dashicons-external" style="color:#6d28d9;"></span>
+                    <h2 style="font-size:14px; font-weight:700; color:#1e293b; margin:0;">Quick Launcher & Action Center</h2>
+                </div>
+                <div class="evonee-card-body" style="padding:18px 20px;">
+                    <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:12px;">
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-submissions')); ?>" class="button" style="display:flex; align-items:center; justify-content:center; gap:8px; height:42px; background:#faf5ff; border:1px solid #e9d5ff; color:#6d28d9; font-weight:700; border-radius:8px;">
+                            <span>📥 Submissions</span>
+                        </a>
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-analytics')); ?>" class="button" style="display:flex; align-items:center; justify-content:center; gap:8px; height:42px; background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8; font-weight:700; border-radius:8px;">
+                            <span>📊 Analytics</span>
+                        </a>
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-settings')); ?>" class="button" style="display:flex; align-items:center; justify-content:center; gap:8px; height:42px; background:#f0fdf4; border:1px solid #bbf7d0; color:#15803d; font-weight:700; border-radius:8px;">
+                            <span>⚙️ Settings</span>
+                        </a>
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-docs')); ?>" class="button" style="display:flex; align-items:center; justify-content:center; gap:8px; height:42px; background:#fff7ed; border:1px solid #fed7aa; color:#c2410c; font-weight:700; border-radius:8px;">
+                            <span>📖 Docs & Guide</span>
+                        </a>
+                        <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=evonee-submissions&action=export_csv'), 'eq_export_csv_nonce')); ?>" class="button" style="display:flex; align-items:center; justify-content:center; gap:8px; height:42px; background:#f8fafc; border:1px solid #cbd5e1; color:#334155; font-weight:700; border-radius:8px;">
+                            <span>📥 Export CSV</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Two-Column Main Body -->
+            <div style="display:grid; grid-template-columns:2fr 1fr; gap:24px;">
+                <!-- Left Column -->
+                <div>
+                    <!-- Recent Submissions Card -->
+                    <div class="evonee-doc-card" style="margin-bottom:24px;">
+                        <div class="evonee-card-header" style="padding:14px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0; border-top-left-radius:12px; border-top-right-radius:12px; display:flex; justify-content:space-between; align-items:center;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span class="dashicons dashicons-list-view" style="color:#6d28d9;"></span>
+                                <h2 style="font-size:14px; font-weight:700; color:#1e293b; margin:0;">📋 Recent Quote Submissions</h2>
+                            </div>
+                            <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-submissions')); ?>" style="font-size:12px; font-weight:700; color:#6d28d9; text-decoration:none;">View All Submissions &rarr;</a>
+                        </div>
+                        <div class="evonee-card-body" style="padding:0;">
+                            <?php if (!empty($recent_quotes)): ?>
+                                <table class="wp-list-table widefat fixed striped" style="border:none; box-shadow:none;">
+                                    <thead>
+                                        <tr>
+                                            <th style="font-size:11px; text-transform:uppercase; color:#64748b;">ID / Date</th>
+                                            <th style="font-size:11px; text-transform:uppercase; color:#64748b;">Customer</th>
+                                            <th style="font-size:11px; text-transform:uppercase; color:#64748b;">Product</th>
+                                            <th style="font-size:11px; text-transform:uppercase; color:#64748b;">Status</th>
+                                            <th style="font-size:11px; text-transform:uppercase; color:#64748b; text-align:right;">Quoted Price</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($recent_quotes as $q):
+                                            $sc_colors = ['new' => '#16a34a', 'pending' => '#d97706', 'quoted' => '#2563eb', 'approved' => '#7c3aed', 'completed' => '#059669', 'rejected' => '#dc2626'];
+                                            $sc_bg = isset($sc_colors[strtolower($q->status)]) ? $sc_colors[strtolower($q->status)] : '#6b7280';
+                                        ?>
+                                            <tr>
+                                                <td>
+                                                    <strong>#<?php echo esc_html($q->id); ?></strong><br>
+                                                    <small style="color:#94a3b8;"><?php echo esc_html(wp_date('M j, H:i', strtotime($q->created_at))); ?></small>
+                                                </td>
+                                                <td>
+                                                    <strong><?php echo esc_html($q->full_name); ?></strong><br>
+                                                    <small style="color:#64748b;"><?php echo esc_html($q->email); ?></small>
+                                                </td>
+                                                <td>
+                                                    <?php echo esc_html($q->product); ?><br>
+                                                    <small style="color:#64748b;">Qty: <?php echo esc_html($q->quantity); ?></small>
+                                                </td>
+                                                <td>
+                                                    <span style="background:<?php echo esc_attr($sc_bg); ?>; color:#ffffff; border-radius:4px; padding:3px 8px; font-size:10px; font-weight:700; text-transform:uppercase;">
+                                                        <?php echo esc_html($q->status ?: 'new'); ?>
+                                                    </span>
+                                                </td>
+                                                <td style="text-align:right; font-weight:700; color:#0f172a;">
+                                                    <?php echo (!empty($q->quoted_price) && floatval($q->quoted_price) > 0) ? esc_html($curr_sym) . number_format($q->quoted_price, 2) : '<span style="color:#94a3b8; font-weight:normal;">Unquoted</span>'; ?>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            <?php else: ?>
+                                <p style="padding:20px; text-align:center; color:#94a3b8; margin:0;">No quote submissions received yet.</p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <!-- Mini Trend Graph Card -->
+                    <div class="evonee-doc-card">
+                        <div class="evonee-card-header" style="padding:14px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0; border-top-left-radius:12px; border-top-right-radius:12px; display:flex; align-items:center; gap:8px;">
+                            <span class="dashicons dashicons-chart-bar" style="color:#6d28d9;"></span>
+                            <h2 style="font-size:14px; font-weight:700; color:#1e293b; margin:0;">📈 6-Month Lead Growth Trend</h2>
+                        </div>
+                        <div class="evonee-card-body" style="padding:20px;">
+                            <canvas id="dashTrendChart" style="max-height:220px;"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column -->
+                <div>
+                    <!-- System Health Diagnostic Card -->
+                    <div class="evonee-doc-card" style="margin-bottom:24px;">
+                        <div class="evonee-card-header" style="padding:14px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0; border-top-left-radius:12px; border-top-right-radius:12px; display:flex; align-items:center; gap:8px;">
+                            <span class="dashicons dashicons-heart" style="color:#6d28d9;"></span>
+                            <h2 style="font-size:14px; font-weight:700; color:#1e293b; margin:0;">🩺 System Health & Integrations</h2>
+                        </div>
+                        <div class="evonee-card-body" style="padding:16px 20px;">
+                            <ul style="margin:0; padding:0; list-style:none;">
+                                <li style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
+                                    <span>⏱️ <strong>WP-Cron Expiry Automation</strong></span>
+                                    <?php if ($cron_active): ?>
+                                        <span style="background:#dcfce7; color:#15803d; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Active ✓</span>
+                                    <?php else: ?>
+                                        <span style="background:#fee2e2; color:#b91c1c; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Inactive ⚠</span>
+                                    <?php endif; ?>
+                                </li>
+                                <li style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
+                                    <span>🛒 <strong>WooCommerce Engine</strong></span>
+                                    <?php if ($wc_active): ?>
+                                        <span style="background:#dcfce7; color:#15803d; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Connected ✓</span>
+                                    <?php else: ?>
+                                        <span style="background:#f1f5f9; color:#64748b; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Not Installed</span>
+                                    <?php endif; ?>
+                                </li>
+                                <li style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
+                                    <span>🛡️ <strong>reCAPTCHA v3 Protection</strong></span>
+                                    <?php if ($recaptcha_ready): ?>
+                                        <span style="background:#dcfce7; color:#15803d; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Protected ✓</span>
+                                    <?php else: ?>
+                                        <span style="background:#fef3c7; color:#b45309; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Disabled</span>
+                                    <?php endif; ?>
+                                </li>
+                                <li style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
+                                    <span>🔗 <strong>Webhook / Zapier Catch</strong></span>
+                                    <?php if ($webhook_ready): ?>
+                                        <span style="background:#dcfce7; color:#15803d; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Connected ✓</span>
+                                    <?php else: ?>
+                                        <span style="background:#f1f5f9; color:#64748b; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Off</span>
+                                    <?php endif; ?>
+                                </li>
+                                <li style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; font-size:13px;">
+                                    <span>💬 <strong>Slack Lead Channel</strong></span>
+                                    <?php if ($slack_ready): ?>
+                                        <span style="background:#dcfce7; color:#15803d; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Connected ✓</span>
+                                    <?php else: ?>
+                                        <span style="background:#f1f5f9; color:#64748b; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Off</span>
+                                    <?php endif; ?>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Top Requested Products Widget -->
+                    <div class="evonee-doc-card">
+                        <div class="evonee-card-header" style="padding:14px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0; border-top-left-radius:12px; border-top-right-radius:12px; display:flex; align-items:center; gap:8px;">
+                            <span class="dashicons dashicons-star-filled" style="color:#d97706;"></span>
+                            <h2 style="font-size:14px; font-weight:700; color:#1e293b; margin:0;">🔥 Top Demanded Products</h2>
+                        </div>
+                        <div class="evonee-card-body" style="padding:16px 20px;">
+                            <?php if (!empty($top_products)): ?>
+                                <?php foreach ($top_products as $tp):
+                                    $pct = $total_count > 0 ? round(($tp->total / $total_count) * 100) : 0;
+                                ?>
+                                    <div style="margin-bottom:14px;">
+                                        <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">
+                                            <strong><?php echo esc_html($tp->product); ?></strong>
+                                            <span style="color:#64748b; font-weight:600;"><?php echo esc_html($tp->total); ?> quotes (<?php echo esc_html($pct); ?>%)</span>
+                                        </div>
+                                        <div style="background:#f1f5f9; border-radius:10px; height:8px; overflow:hidden;">
+                                            <div style="background:linear-gradient(90deg, #6d28d9 0%, #7c3aed 100%); height:100%; width:<?php echo esc_attr($pct); ?>%; border-radius:10px;"></div>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <p style="color:#94a3b8; font-size:12px; text-align:center; margin:0;">No product data available yet.</p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const trendCtx = document.getElementById('dashTrendChart');
+            if (trendCtx) {
+                const trendLabels = <?php echo json_encode(array_column($monthly_trends, 'month_label') ?: ['Current']); ?>;
+                const trendData   = <?php echo json_encode(array_map('intval', array_column($monthly_trends, 'total')) ?: [$total_count]); ?>;
+
+                new Chart(trendCtx, {
+                    type: 'line',
+                    data: {
+                        labels: trendLabels,
+                        datasets: [{
+                            label: 'Quote Submissions',
+                            data: trendData,
+                            borderColor: '#6d28d9',
+                            backgroundColor: 'rgba(109, 40, 217, 0.08)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.3,
+                            pointBackgroundColor: '#6d28d9',
+                            pointRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+                            x: { grid: { display: false } }
+                        }
+                    }
+                });
+            }
+        });
+        </script>
         <?php
     }
 
@@ -417,6 +862,13 @@ class Evonee_Quote_Admin {
                         2. Price offer valid for 30 days from quote issue date.<br>
                         3. Standard production & delivery timeline applies upon artwork approval.
                     </div>
+
+                    <?php if (!empty($quote->digital_signature)): ?>
+                        <div style="margin-top:20px; padding:12px; border:1px dashed #cbd5e1; border-radius:8px; display:inline-block; background:#fafafa;">
+                            <strong style="font-size:11px; color:#475569; display:block;">✍️ Customer Acceptance Signature:</strong>
+                            <img src="<?php echo esc_url($quote->digital_signature); ?>" style="max-height:60px; margin-top:4px;">
+                        </div>
+                    <?php endif; ?>
                 </div>
             </body>
             </html>
@@ -429,7 +881,7 @@ class Evonee_Quote_Admin {
             $delete_id = intval($_GET['id']);
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
             $wpdb->delete($table_name, ['id' => $delete_id], ['%d']);
-            wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=deleted&eq_id=' . $delete_id));
+            wp_safe_redirect(admin_url('admin.php?page=evonee-submissions&eq_notice=deleted&eq_id=' . $delete_id));
             exit;
         }
 
@@ -444,7 +896,7 @@ class Evonee_Quote_Admin {
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
             $wpdb->update($table_name, ['status' => $new_status], ['id' => $sub_id], ['%s'], ['%d']);
             Evonee_Quote_Ajax::log_activity($sub_id, 'status_change', 'Status updated to ' . strtoupper($new_status));
-            wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=status&eq_id=' . $sub_id));
+            wp_safe_redirect(admin_url('admin.php?page=evonee-submissions&eq_notice=status&eq_id=' . $sub_id));
             exit;
         }
 
@@ -502,10 +954,10 @@ class Evonee_Quote_Admin {
                 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
                 $wpdb->update($table_name, ['status' => 'quoted'], ['id' => $sub_id], ['%s'], ['%d']);
                 Evonee_Quote_Ajax::log_activity($sub_id, 'status_change', 'Status updated to QUOTED via Email Reply');
-                wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=email_sent'));
+                wp_safe_redirect(admin_url('admin.php?page=evonee-submissions&eq_notice=email_sent'));
                 exit;
             }
-            wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=email_failed'));
+            wp_safe_redirect(admin_url('admin.php?page=evonee-submissions&eq_notice=email_failed'));
             exit;
         }
 
@@ -519,7 +971,7 @@ class Evonee_Quote_Admin {
                 $placeholders = implode(',', array_fill(0, count($bulk_ids), '%d'));
                 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, PluginCheck.Security.DirectDB.UnescapedDBParameter
                 $wpdb->query($wpdb->prepare("DELETE FROM {$table_name} WHERE id IN ($placeholders)", ...$bulk_ids));
-                wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=bulk_deleted&eq_count=' . count($bulk_ids)));
+                wp_safe_redirect(admin_url('admin.php?page=evonee-submissions&eq_notice=bulk_deleted&eq_count=' . count($bulk_ids)));
                 exit;
             } elseif (!empty($bulk_ids) && in_array($action, ['status_new', 'status_pending', 'status_quoted', 'status_approved', 'status_completed', 'status_rejected'], true)) {
                 $status_val = str_replace('status_', '', $action);
@@ -530,7 +982,7 @@ class Evonee_Quote_Admin {
                 foreach ($bulk_ids as $bid) {
                     Evonee_Quote_Ajax::log_activity($bid, 'status_change', 'Bulk status update to ' . strtoupper($status_val));
                 }
-                wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=bulk_status'));
+                wp_safe_redirect(admin_url('admin.php?page=evonee-submissions&eq_notice=bulk_status'));
                 exit;
             }
         }
@@ -581,7 +1033,7 @@ class Evonee_Quote_Admin {
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter
         $results    = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}eq_quote_submissions $where_sql ORDER BY " . sanitize_sql_orderby("$orderby $order") . " LIMIT %d OFFSET %d", $per_page, $offset));
-        $export_url = wp_nonce_url(admin_url('admin.php?page=evonee-quotes&action=export_csv'), 'eq_export_csv_nonce');
+        $export_url = wp_nonce_url(admin_url('admin.php?page=evonee-submissions&action=export_csv'), 'eq_export_csv_nonce');
         ?>
         <div class="wrap evonee-admin-wrap">
             <?php
@@ -617,7 +1069,7 @@ class Evonee_Quote_Admin {
             <!-- Search & Filter Bar -->
             <div class="evonee-filter-bar">
                 <form method="get" class="evonee-filter-form">
-                    <input type="hidden" name="page" value="evonee-quotes">
+                    <input type="hidden" name="page" value="evonee-submissions">
                     
                     <div class="evonee-filter-group">
                         <select name="status_filter" onchange="this.form.submit();">
@@ -644,7 +1096,7 @@ class Evonee_Quote_Admin {
                         </div>
 
                         <?php if (!empty($search) || !empty($status_filter) || !empty($date_range)): ?>
-                            <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-quotes')); ?>" class="button button-link-delete">Reset Filters</a>
+                            <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-submissions')); ?>" class="button button-link-delete">Reset Filters</a>
                         <?php endif; ?>
                     </div>
                 </form>
@@ -896,6 +1348,17 @@ class Evonee_Quote_Admin {
                     </div>
                 </div>
 
+                <!-- 1-Click WooCommerce Order Conversion (Phase 1.2) -->
+                <div style="border-top:1px solid #e2e8f0; padding:12px 20px; background:#fff7ed; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <strong style="font-size:12.5px; color:#c2410c;">🛒 WooCommerce Order Integration:</strong>
+                        <span style="font-size:12px; color:#7c2d12; margin-left:4px;">Instantly convert quote into a WooCommerce Pending Order.</span>
+                    </div>
+                    <div>
+                        <button type="button" id="eq-convert-wc-btn" class="button button-primary" style="background:#ea580c; border-color:#ea580c;">🛒 Convert to WC Order</button>
+                    </div>
+                </div>
+
                 <!-- Internal Admin Notes (Phase 1.3) -->
                 <div style="border-top:1px solid #e2e8f0; padding:16px 20px; background:#f8fafc;">
                     <h3 style="margin:0 0 8px; font-size:13px; color:#374151; font-weight:700;">🔒 Internal Team Notes <small style="font-weight:400; color:#9ca3af;">(Not visible to customer)</small></h3>
@@ -903,6 +1366,18 @@ class Evonee_Quote_Admin {
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
                         <span id="eq-notes-saved-msg" style="font-size:11px; color:#16a34a; display:none;">✅ Notes saved!</span>
                         <button type="button" id="eq-save-notes-btn" class="button button-primary" style="background:#6d28d9; border-color:#6d28d9;">💾 Save Notes</button>
+                    </div>
+                </div>
+
+                <!-- Quote Discussion Thread (Step 2) -->
+                <div style="border-top:1px solid #e2e8f0; padding:16px 20px; background:#faf5ff;">
+                    <h3 style="margin:0 0 10px; font-size:13px; color:#6d28d9; font-weight:700;">💬 Quote Discussion Thread (Live Customer Messages)</h3>
+                    <div id="eq-discussion-messages" style="max-height:160px; overflow-y:auto; font-size:12px; background:#ffffff; padding:10px; border-radius:6px; border:1px solid #e9d5ff; margin-bottom:10px;">
+                        <em style="color:#9ca3af;">Loading messages...</em>
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" id="eq-admin-chat-input" placeholder="Type a message to customer..." style="flex:1; font-size:12px; padding:6px 10px; border:1px solid #d8b4fe; border-radius:6px;">
+                        <button type="button" id="eq-send-admin-chat-btn" class="button button-primary" style="background:#6d28d9; border-color:#6d28d9;">Send Response</button>
                     </div>
                 </div>
 
@@ -1142,6 +1617,33 @@ class Evonee_Quote_Admin {
                         }
                     }
 
+                    function loadDiscussionMessages(subId) {
+                        const discBox = document.getElementById('eq-discussion-messages');
+                        if (!discBox) return;
+                        discBox.innerHTML = '<em style="color:#9ca3af;">Loading messages...</em>';
+                        fetch('<?php echo esc_url(admin_url('admin-ajax.php')); ?>?action=eq_get_messages&submission_id=' + subId)
+                            .then(r => r.json())
+                            .then(data => {
+                                if (data.success && data.data && data.data.messages && data.data.messages.length > 0) {
+                                    discBox.innerHTML = data.data.messages.map(m => {
+                                        const isAdmin = m.sender_type === 'admin';
+                                        const bg = isAdmin ? '#faf5ff' : '#eff6ff';
+                                        const border = isAdmin ? '#e9d5ff' : '#bfdbfe';
+                                        const align = isAdmin ? 'right' : 'left';
+                                        const senderLabel = isAdmin ? '🛡️ Admin (' + escapeHtml(m.sender_name) + ')' : '👤 ' + escapeHtml(m.sender_name);
+                                        return `<div style="background:${bg}; border:1px solid ${border}; padding:6px 10px; border-radius:6px; margin-bottom:6px; text-align:${align};">
+                                            <strong>${senderLabel}</strong> <small style="color:#94a3b8;">${escapeHtml(m.created_at)}</small>
+                                            <div style="margin-top:2px; color:#1e293b;">${escapeHtml(m.message)}</div>
+                                        </div>`;
+                                    }).join('');
+                                    discBox.scrollTop = discBox.scrollHeight;
+                                } else {
+                                    discBox.innerHTML = '<span style="color:#94a3b8; font-style:italic;">No messages in discussion thread yet.</span>';
+                                }
+                            })
+                            .catch(() => { discBox.innerHTML = '<span style="color:#dc2626;">Error loading messages.</span>'; });
+                    }
+
                     if (emailBody) {
                         if (subEmails.length > 0) {
                             emailBody.innerHTML = subEmails.map(e => `<div style="margin-bottom:4px; border-bottom:1px dashed #bfdbfe; padding-bottom:4px;"><strong>${escapeHtml(e.type)}</strong> (${escapeHtml(e.status)}) → ${escapeHtml(e.recipient)}<br><em>${escapeHtml(e.subject)}</em><br><small style="color:#94a3b8;">${escapeHtml(e.sent_at)}</small></div>`).join('');
@@ -1149,6 +1651,8 @@ class Evonee_Quote_Admin {
                             emailBody.innerHTML = '<span style="color:#94a3b8;">No email history recorded yet.</span>';
                         }
                     }
+
+                    loadDiscussionMessages(row.id);
 
                     detailModal.style.display = 'flex';
                 });
@@ -1185,6 +1689,59 @@ class Evonee_Quote_Admin {
                             }
                         })
                         .catch(() => { saveNotesBtn.disabled = false; saveNotesBtn.textContent = '💾 Save Notes'; });
+                });
+            }
+
+            // Send Admin Chat Message (Step 2)
+            const sendChatBtn = document.getElementById('eq-send-admin-chat-btn');
+            const chatInput   = document.getElementById('eq-admin-chat-input');
+            if (sendChatBtn && chatInput) {
+                sendChatBtn.addEventListener('click', function() {
+                    if (!currentDetailId) return;
+                    const msg = chatInput.value.trim();
+                    if (!msg) return;
+                    sendChatBtn.disabled = true;
+                    sendChatBtn.textContent = 'Sending...';
+
+                    const fd = new FormData();
+                    fd.append('action', 'eq_send_message');
+                    fd.append('submission_id', currentDetailId);
+                    fd.append('sender_type', 'admin');
+                    fd.append('message', msg);
+
+                    fetch('<?php echo esc_url(admin_url('admin-ajax.php')); ?>', { method: 'POST', body: fd })
+                        .then(r => r.json())
+                        .then(data => {
+                            sendChatBtn.disabled = false;
+                            sendChatBtn.textContent = 'Send Response';
+                            if (data.success) {
+                                chatInput.value = '';
+                                const discBox = document.getElementById('eq-discussion-messages');
+                                if (discBox) {
+                                    fetch('<?php echo esc_url(admin_url('admin-ajax.php')); ?>?action=eq_get_messages&submission_id=' + currentDetailId)
+                                        .then(r => r.json())
+                                        .then(d => {
+                                            if (d.success && d.data && d.data.messages && d.data.messages.length > 0) {
+                                                discBox.innerHTML = d.data.messages.map(m => {
+                                                    const isAdmin = m.sender_type === 'admin';
+                                                    const bg = isAdmin ? '#faf5ff' : '#eff6ff';
+                                                    const border = isAdmin ? '#e9d5ff' : '#bfdbfe';
+                                                    const align = isAdmin ? 'right' : 'left';
+                                                    const senderLabel = isAdmin ? '🛡️ Admin (' + escapeHtml(m.sender_name) + ')' : '👤 ' + escapeHtml(m.sender_name);
+                                                    return `<div style="background:${bg}; border:1px solid ${border}; padding:6px 10px; border-radius:6px; margin-bottom:6px; text-align:${align};">
+                                                        <strong>${senderLabel}</strong> <small style="color:#94a3b8;">${escapeHtml(m.created_at)}</small>
+                                                        <div style="margin-top:2px; color:#1e293b;">${escapeHtml(m.message)}</div>
+                                                    </div>`;
+                                                }).join('');
+                                                discBox.scrollTop = discBox.scrollHeight;
+                                            }
+                                        });
+                                }
+                            } else {
+                                alert(data.data ? data.data.message : 'Error sending message.');
+                            }
+                        })
+                        .catch(() => { sendChatBtn.disabled = false; sendChatBtn.textContent = 'Send Response'; });
                 });
             }
 
@@ -1253,6 +1810,41 @@ class Evonee_Quote_Admin {
                             }
                         })
                         .catch(() => { savePriceBtn.disabled = false; });
+                });
+            }
+
+            // Convert to WooCommerce Order via AJAX (Phase 1.2)
+            const convertWcBtn = document.getElementById('eq-convert-wc-btn');
+            if (convertWcBtn) {
+                convertWcBtn.addEventListener('click', function() {
+                    if (!currentDetailId) return;
+                    if (!confirm('Convert Quote #' + currentDetailId + ' to a WooCommerce Order?')) return;
+
+                    convertWcBtn.disabled = true;
+                    convertWcBtn.textContent = 'Converting...';
+
+                    const fd = new FormData();
+                    fd.append('action', 'eq_convert_to_wc_order');
+                    fd.append('nonce', '<?php echo esc_js(wp_create_nonce('eq_convert_to_wc_order_nonce')); ?>');
+                    fd.append('submission_id', currentDetailId);
+
+                    fetch('<?php echo esc_url(admin_url('admin-ajax.php')); ?>', { method: 'POST', body: fd })
+                        .then(r => r.json())
+                        .then(data => {
+                            convertWcBtn.disabled = false;
+                            convertWcBtn.textContent = '🛒 Convert to WC Order';
+                            if (data.success) {
+                                alert(data.data.message + '\n\nOpening WooCommerce Order edit page...');
+                                window.open(data.data.order_edit_url, '_blank');
+                            } else {
+                                alert('Error: ' + (data.data?.message || 'Failed to convert order.'));
+                            }
+                        })
+                        .catch(() => {
+                            convertWcBtn.disabled = false;
+                            convertWcBtn.textContent = '🛒 Convert to WC Order';
+                            alert('An unexpected error occurred.');
+                        });
                 });
             }
 
@@ -1369,15 +1961,18 @@ class Evonee_Quote_Admin {
                                 <h2>1. Quick Start & v2.0.0 Enterprise Overview</h2>
                             </div>
                             <div class="evonee-card-body">
-                                <p>The <strong>Evonee Get Quote Plugin (v2.0.0 Enterprise)</strong> provides a powerful B2B Lead Management & Custom Quote Automation System. It embeds a site-wide modal popup with a 6-step progress bar, instant price estimator, and CRM dashboard for managing customer quote requests.</p>
+                                <p>The <strong>Evonee Get Quote Plugin (v2.0.0 Enterprise)</strong> provides a complete B2B Lead Management & Custom Quote Automation System. It embeds a site-wide modal popup with a 6-step progress bar, instant price estimator, front-end customer portal, 1-click WooCommerce order conversion, and automated WP-Cron expiry reminders.</p>
 
                                 <div class="evonee-feature-box">
                                     <ul>
-                                        <li>⚡ <strong>8 Core Modules & 35+ Features:</strong> Full CRM pipeline, Email Builder, Analytics, Integrations, and UX tools.</li>
+                                        <li>⚡ <strong>9 Core Modules & 40+ Features:</strong> Full CRM pipeline, Email Builder, Front-end Portal, WooCommerce Conversion, Analytics, Integrations, and Cron Automations.</li>
+                                        <li>👤 <strong>Front-end Customer Portal:</strong> Embed <code>[evonee_customer_portal]</code> for buyers to track submitted quotes and accept/decline offers.</li>
+                                        <li>🛒 <strong>1-Click WooCommerce Order Conversion:</strong> Convert quote submissions into WooCommerce pending orders directly from the CRM drawer.</li>
+                                        <li>⏰ <strong>Automated Reminders & Expiry:</strong> Daily WP-Cron automatically dispatches reminder emails to customers before quote offers expire.</li>
                                         <li>🛡️ <strong>Advanced Security & Spam Shield:</strong> Google reCAPTCHA v3, Nonce verification, Honeypot bot protection, and IP rate-limiting.</li>
                                         <li>📎 <strong>Multi-File Artwork Upload:</strong> Secure dropzone supporting up to 3 artwork files (AI, PDF, EPS, SVG, PNG, JPG) with DOM-based SVG XSS sanitization.</li>
-                                        <li>💬 <strong>Customer Tokenized Quote Acceptance:</strong> Auto-generates 30-day expiring action links (Accept/Decline) inside email replies for 1-click customer approval.</li>
-                                        <li>🔗 <strong>Webhook, Zapier & Slack Automation:</strong> Automatically post lead payloads to Slack channels or CRM webhooks upon submission.</li>
+                                        <li>💬 <strong>Customer Tokenized Quote Acceptance:</strong> Auto-generates expiring action links (Accept/Decline) inside email replies for 1-click customer approval.</li>
+                                        <li>🔗 <strong>Webhook, Zapier, Slack, Discord & Google Sheets:</strong> Real-time automated lead payloads to Google Sheets, Slack channels, Discord, or CRM webhooks.</li>
                                     </ul>
                                 </div>
                             </div>
@@ -1409,9 +2004,9 @@ class Evonee_Quote_Admin {
                                             <td><code>Evonee Quotes ➔ Settings</code> & ➔ <code>Email Log</code></td>
                                         </tr>
                                         <tr>
-                                            <td><strong>💰 Module 3 — Pricing</strong></td>
-                                            <td>Quoted Price Entry in CRM, 1-Click Printable PDF Quote Sheet, Tokenized Customer Accept/Decline Email Buttons.</td>
-                                            <td><code>Submissions ➔ View Detail</code></td>
+                                            <td><strong>🌍 Module 3 — Multi-Currency & Pricing</strong></td>
+                                            <td>Global Currency Symbols ($, €, £, ¥, ৳, AED), ISO 4217 Currency Codes, 4 Position formats, Decimal/Thousand Separator controls, and Volume Tier Breaks.</td>
+                                            <td><code>Evonee Quotes ➔ Settings</code></td>
                                         </tr>
                                         <tr>
                                             <td><strong>📊 Module 4 — Analytics</strong></td>
@@ -1419,24 +2014,29 @@ class Evonee_Quote_Admin {
                                             <td><code>Evonee Quotes ➔ Analytics & Reports</code></td>
                                         </tr>
                                         <tr>
-                                            <td><strong>🛒 Module 5 — WooCommerce</strong></td>
-                                            <td>Auto-detects WooCommerce products, shop loop auto-buttons, and "Quote-Only" Mode (hides Add to Cart).</td>
+                                            <td><strong>🛒 Module 5 — WooCommerce & Direct Pay</strong></td>
+                                            <td>1-Click Quote to Order Conversion, Instant Payment & Checkout button upon Customer Signature Acceptance, Conditional Quote Rules, and Bulk Cart Quote.</td>
+                                            <td><code>Evonee Quotes ➔ Settings</code> & ➔ <code>Submissions</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>🎨 Module 6 — Visual Field Builder</strong></td>
+                                            <td>7 dynamic No-Code field types: Text, Dropdown Select, Radio Buttons, Single Checkbox, HTML5 Date Picker, Number, and Textarea with live modal rendering & server validation.</td>
+                                            <td><code>Evonee Quotes ➔ Settings ➔ Section 3</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>🔗 Module 7 — Integrations</strong></td>
+                                            <td>Webhook URL endpoint (Zapier, Make, HubSpot), Google Sheets Real-Time Sync, Slack, Discord, Native Elementor Widget, and Gutenberg Block.</td>
                                             <td><code>Evonee Quotes ➔ Settings</code></td>
                                         </tr>
                                         <tr>
-                                            <td><strong>🔗 Module 6 — Integrations</strong></td>
-                                            <td>Webhook URL endpoint (Zapier, Make, HubSpot), Google Sheets Real-Time Sync, and Slack Channel Notifications.</td>
+                                            <td><strong>🛡️ Module 8 — Security & UX</strong></td>
+                                            <td>Nonce verification on all AJAX/Chat endpoints, XSS-safe E-Signature canvas, Google reCAPTCHA v3, Multi-file Upload, LocalStorage Form Draft Auto-Resume.</td>
                                             <td><code>Evonee Quotes ➔ Settings</code></td>
                                         </tr>
                                         <tr>
-                                            <td><strong>🛡️ Module 7 — Security & UX</strong></td>
-                                            <td>Google reCAPTCHA v3, Multi-file Upload (up to 3 files), DOM SVG XSS cleaning, Server max upload limit detection.</td>
-                                            <td><code>Evonee Quotes ➔ Settings</code></td>
-                                        </tr>
-                                        <tr>
-                                            <td><strong>🎨 Module 8 — UI/UX</strong></td>
-                                            <td>Multi-step Gradient Progress Bar, Social Proof Badge ("⚡ X quotes today"), Floating WhatsApp Button, Branded PDF Logo.</td>
-                                            <td>Modal & PDF Sheet Header</td>
+                                            <td><strong>⏰ Module 9 — Automations & Cleanup</strong></td>
+                                            <td>Daily WP-Cron background task for automated expiry reminders, weekly digest, and standard WordPress <code>uninstall.php</code> data cleanup option.</td>
+                                            <td><code>Evonee Quotes ➔ Settings</code> & Background Cron</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -1449,15 +2049,19 @@ class Evonee_Quote_Admin {
                         <div class="evonee-doc-card">
                             <div class="evonee-card-header">
                                 <span class="dashicons dashicons-shortcode"></span>
-                                <h2>1. Elementor & Shortcode Usage</h2>
+                                <h2>1. Shortcodes, Elementor & Page Builders</h2>
                             </div>
                             <div class="evonee-card-body">
-                                <p>Use the shortcode <code>[evonee_products]</code> inside Elementor's <strong>Shortcode Widget</strong> or any page builder to render the popular products grid.</p>
+                                <p>Use shortcodes inside Elementor's <strong>Shortcode Widget</strong>, Gutenberg blocks, or any page builder to render grids, trigger buttons, or customer portal.</p>
 
-                                <h3>Primary Shortcode:</h3>
-                                <div class="evonee-code-snippet">
-                                    <code>[evonee_products]</code>
-                                    <button type="button" class="evonee-copy-code" data-code="[evonee_products]">Copy</button>
+                                <h3>Primary Shortcodes:</h3>
+                                
+                                <div style="margin-bottom:14px;">
+                                    <strong>1. Products Grid Shortcode:</strong>
+                                    <div class="evonee-code-snippet">
+                                        <code>[evonee_products cols="6" cols_tablet="3" cols_mobile="2"]</code>
+                                        <button type="button" class="evonee-copy-code" data-code='[evonee_products cols="6" cols_tablet="3" cols_mobile="2"]'>Copy</button>
+                                    </div>
                                 </div>
 
                                 <h3>Shortcode Parameters Reference:</h3>
@@ -1516,20 +2120,102 @@ class Evonee_Quote_Admin {
                                     </tbody>
                                 </table>
 
-                                <h3>Examples & Usage:</h3>
-                                <div class="evonee-code-snippet">
-                                    <code>[evonee_products cols="6" cols_tablet="3" cols_mobile="2"]</code>
-                                    <button type="button" class="evonee-copy-code" data-code='[evonee_products cols="6" cols_tablet="3" cols_mobile="2"]'>Copy</button>
-                                </div>
-                                <div class="evonee-code-snippet">
-                                    <code>[evonee_quote_button product="Silicone Wristband" text="Get Free Quote"]</code>
-                                    <button type="button" class="evonee-copy-code" data-code='[evonee_quote_button product="Silicone Wristband" text="Get Free Quote"]'>Copy</button>
+                                <div style="margin-top:16px; margin-bottom:14px;">
+                                    <strong>2. Quote Trigger Button Shortcode:</strong>
+                                    <div class="evonee-code-snippet">
+                                        <code>[evonee_quote_button product="Silicone Wristband" text="Get Free Quote"]</code>
+                                        <button type="button" class="evonee-copy-code" data-code='[evonee_quote_button product="Silicone Wristband" text="Get Free Quote"]'>Copy</button>
+                                    </div>
                                 </div>
 
-                                <div style="background:#f1f5f9; padding:14px; border-radius:8px; margin-top:16px;">
+                                <div style="background:#f1f5f9; padding:14px; border-radius:8px; margin-top:12px; margin-bottom:16px;">
                                     <strong style="color:#1e293b; display:block; margin-bottom:4px;">💡 Trigger Modal from Any Custom HTML Element:</strong>
                                     <p style="margin:0; font-size:13px; color:#475569;">Add class <code>eq-open-modal</code> to any button or link. Pass optional <code>data-product="Custom Item"</code> and <code>data-image="URL"</code> to pre-fill the popup modal automatically!</p>
                                 </div>
+
+                                <div style="margin-bottom:14px;">
+                                    <strong>3. Front-end Customer Quote Portal Shortcode:</strong>
+                                    <div class="evonee-code-snippet">
+                                        <code>[evonee_customer_portal]</code>
+                                        <button type="button" class="evonee-copy-code" data-code='[evonee_customer_portal]'>Copy</button>
+                                    </div>
+                                    <p class="description">Renders a front-end portal where buyers can view their quote history, track real-time statuses, view price offers, and 1-click accept or decline offers.</p>
+                                </div>
+
+                                <h3>Native Page Builders & WooCommerce Integration:</h3>
+                                <ul style="line-height:1.6; color:#475569; padding-left:20px;">
+                                    <li><strong>Elementor Native Widget:</strong> Search for <code>Evonee Quote Button</code> under Elementor's <em>General</em> widget category.</li>
+                                    <li><strong>Gutenberg Block:</strong> Search for <code>evonee/quote-button</code> block in WordPress block editor or Full Site Editing (FSE).</li>
+                                    <li><strong>1-Click WooCommerce Order Conversion:</strong> In <code>Evonee Quotes ➔ Submissions</code>, open any quote drawer and click <code>🛒 Convert to WC Order</code> to generate a WooCommerce pending order.</li>
+                                    <li><strong>Bulk Cart Quote Request:</strong> Enable <code>Bulk Cart Quote Request</code> in Settings to add a B2B quote request button on WooCommerce Cart & Checkout pages.</li>
+                                </ul>
+
+                                <h3>Enterprise Features & Customer Discussion:</h3>
+                                <ul style="line-height:1.6; color:#475569; padding-left:20px;">
+                                    <li><strong>✍️ Digital E-Signature:</strong> Customers can sign quote acceptances using an interactive HTML5 canvas pad on acceptance links.</li>
+                                    <li><strong>💬 Quote Discussion Thread:</strong> Live messaging per quote between buyers and admin in the Customer Portal and Admin Drawer.</li>
+                                    <li><strong>📄 Custom PDF Sheet Generator:</strong> Download official PDF quote sheets with Tax ID, custom accent colors, and terms.</li>
+                                    <li><strong>🔔 Weekly Sales Digest:</strong> Automatic weekly sales summary email delivered every Monday via WP-Cron.</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- Visual Custom Field Builder Guide -->
+                        <div class="evonee-doc-card">
+                            <div class="evonee-card-header">
+                                <span class="dashicons dashicons-plus-alt2"></span>
+                                <h2>2. 🎨 Visual Custom Field Builder Guide</h2>
+                            </div>
+                            <div class="evonee-card-body">
+                                <p>You can dynamically add unlimited custom fields to your Get Quote popup modal without writing code. Navigate to <code>Evonee Quotes ➔ Settings ➔ Section 3</code>.</p>
+                                
+                                <table class="evonee-docs-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Field Type</th>
+                                            <th>How to Configure</th>
+                                            <th>Frontend Display</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><strong>Text Input</strong></td>
+                                            <td>Provide label (e.g. <em>Event Name</em>)</td>
+                                            <td>Standard single-line text input.</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Dropdown Select</strong></td>
+                                            <td>Comma-separated options (e.g. <em>Red, Blue, Green</em>)</td>
+                                            <td>Modern styled select dropdown.</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Radio Buttons</strong></td>
+                                            <td>Comma-separated options (e.g. <em>Standard, Express, Overnight</em>)</td>
+                                            <td>Clean horizontal radio group with instant toggle.</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Single Checkbox</strong></td>
+                                            <td>Label (e.g. <em>Include Sample Pack</em>)</td>
+                                            <td>Stylish toggle checkbox. Saves as 'Yes' when checked.</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>HTML5 Date Picker</strong></td>
+                                            <td>Label (e.g. <em>Event / Target Deadline Date</em>)</td>
+                                            <td>Native calendar date picker with YYYY-MM-DD format.</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Number</strong></td>
+                                            <td>Label (e.g. <em>Budget Range / Est. Guests</em>)</td>
+                                            <td>Numeric input field.</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Textarea</strong></td>
+                                            <td>Label (e.g. <em>Special Artwork / Engraving Specs</em>)</td>
+                                            <td>Multi-line expandable textarea.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                                <p class="description" style="margin-top:10px;">All custom field inputs are automatically validated on submission, saved with the lead record, displayed in the CRM Detail drawer, and included in PDF quote sheets.</p>
                             </div>
                         </div>
                     </div>
@@ -1595,10 +2281,17 @@ class Evonee_Quote_Admin {
                         <div class="evonee-doc-card">
                             <div class="evonee-card-header">
                                 <span class="dashicons dashicons-share-alt"></span>
-                                <h2>Webhook, Zapier & Slack Configuration</h2>
+                                <h2>REST API, Webhook, Zapier & Slack Configuration</h2>
                             </div>
                             <div class="evonee-card-body">
-                                <p><strong>Zapier / Make / HubSpot Webhooks:</strong> Navigate to <code>Evonee Quotes ➔ Settings ➔ Integrations Tab</code>, enable Webhooks, and paste your Target Catch Webhook URL. The plugin sends the following JSON payload on submission:</p>
+                                <p><strong>Custom WP REST API Endpoints:</strong></p>
+                                <ul>
+                                    <li><code>GET /wp-json/evonee/v1/quotes</code> — Retrieve latest 50 quote submissions (Admin Auth).</li>
+                                    <li><code>POST /wp-json/evonee/v1/submit</code> — Submit new quote request via REST API.</li>
+                                    <li><code>GET /wp-json/evonee/v1/stats</code> — Retrieve dashboard metrics and sales statistics.</li>
+                                </ul>
+
+                                <p style="margin-top:14px;"><strong>Zapier / Make / HubSpot Webhooks:</strong> Navigate to <code>Evonee Quotes ➔ Settings ➔ Integrations Tab</code>, enable Webhooks, and paste your Target Catch Webhook URL. The plugin sends the following JSON payload on submission:</p>
                                 
                                 <div class="evonee-code-snippet" style="flex-direction:column; align-items:flex-start; gap:10px;">
                                     <div style="display:flex; justify-content:space-between; width:100%;">
@@ -1656,7 +2349,7 @@ class Evonee_Quote_Admin {
                                 <h3>🛡️ Multi-Layer Security Architecture:</h3>
                                 <ul>
                                     <li><strong>DOM-based SVG XSS Protection:</strong> SVG files are parsed using PHP <code>DOMDocument</code> XML parser with <code>LIBXML_NONET</code>. Script tags, dangerous nodes, inline <code>on*</code> attributes, and <code>javascript:</code> URIs are automatically stripped.</li>
-                                    <li><strong>Google reCAPTCHA v3:</strong> Invisible spam bot protection score evaluation (< 0.5 score rejection).</li>
+                                    <li><strong>Google reCAPTCHA v3:</strong> Invisible spam bot protection score evaluation (&lt; 0.5 score rejection).</li>
                                     <li><strong>Honeypot & Rate Limiting:</strong> Silent honeypot field catches automated bots. Transient IP rate limiter caps requests at 5 per 15 minutes per IP.</li>
                                 </ul>
 
@@ -1691,13 +2384,13 @@ class Evonee_Quote_Admin {
                         <h3>📁 Upload Safety</h3>
                         <p>Uploaded artwork files are saved securely in:</p>
                         <code>wp-content/uploads/evonee-quotes/YYYY/MM/</code>
-                        <p><small>Supports up to 3 files: AI, PDF, EPS, SVG, PNG, JPG (Max <?php echo esc_html(size_format(wp_max_upload_size())); ?>).</small></p>
+                        <p><small style="color:#94a3b8; display:block; margin-top:4px;">Supports up to 3 files: AI, PDF, EPS, SVG, PNG, JPG (Max <?php echo esc_html(size_format(wp_max_upload_size())); ?>).</small></p>
                     </div>
 
-                    <div class="evonee-sidebar-card" style="background:#faf5ff; border-color:#e9d5ff;">
-                        <h3 style="color:#6d28d9;">💬 Need Support or Customization?</h3>
-                        <p>Evonee v2.0 Enterprise Plugin Documentation & Support.</p>
-                        <a href="mailto:sales@evonee.com" class="button button-primary" style="width:100%; text-align:center; background:#6d28d9; border-color:#6d28d9; font-weight:700;">Contact Developer Team</a>
+                    <div class="evonee-sidebar-card" style="background:linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%); border-color:#e9d5ff;">
+                        <h3 style="color:#4c1d95;">💬 Need Support or Customization?</h3>
+                        <p style="color:#6b21a8;">Evonee v2.0 Enterprise Plugin Documentation & Support.</p>
+                        <a href="mailto:sales@evonee.com" class="button button-primary button-large" style="width:100%; text-align:center; background:linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); border-color:#6d28d9; border-radius:8px; font-weight:700; margin-top:8px;">Contact Developer Team</a>
                     </div>
 
                 </div>
@@ -1876,7 +2569,7 @@ class Evonee_Quote_Admin {
                     <p class="subtitle">Real-time quotation pipeline overview, conversion funnel charts, and business growth insights.</p>
                 </div>
                 <div class="evonee-docs-brand">
-                    <span>v2.0 Business Reports</span>
+                    <span>v1.0.0 Business Reports</span>
                 </div>
             </div>
 
@@ -2079,6 +2772,12 @@ class Evonee_Quote_Admin {
             $new_settings = [
                 'sales_email'              => sanitize_email(wp_unslash($_POST['sales_email'] ?? '')),
                 'currency_symbol'          => sanitize_text_field(wp_unslash($_POST['currency_symbol'] ?? '$')),
+                'currency_code'            => sanitize_text_field(wp_unslash($_POST['currency_code'] ?? 'USD')),
+                'currency_pos'             => sanitize_text_field(wp_unslash($_POST['currency_pos'] ?? 'left')),
+                'decimal_separator'        => sanitize_text_field(wp_unslash($_POST['decimal_separator'] ?? '.')),
+                'thousand_separator'       => sanitize_text_field(wp_unslash($_POST['thousand_separator'] ?? ',')),
+                'decimals'                 => min(4, max(0, intval($_POST['decimals'] ?? 2))),
+                'delete_data_on_uninstall' => isset($_POST['delete_data_on_uninstall']) ? '1' : '0',
                 'enable_price_calc'        => isset($_POST['enable_price_calc']) ? '1' : '0',
                 'enable_pdf_quote'         => isset($_POST['enable_pdf_quote']) ? '1' : '0',
                 'enable_analytics'         => isset($_POST['enable_analytics']) ? '1' : '0',
@@ -2108,12 +2807,21 @@ class Evonee_Quote_Admin {
                 'enable_woocommerce_button'=> isset($_POST['enable_woocommerce_button']) ? '1' : '0',
                 'woo_button_text'          => sanitize_text_field(wp_unslash($_POST['woo_button_text'] ?? 'Request a Quote')),
                 'enable_wc_quote_only'     => isset($_POST['enable_wc_quote_only']) ? '1' : '0',
+                'wc_quote_condition'       => sanitize_text_field(wp_unslash($_POST['wc_quote_condition'] ?? 'all')),
+                'wc_hide_price'            => isset($_POST['wc_hide_price']) ? '1' : '0',
+                'enable_cart_quote'        => isset($_POST['enable_cart_quote']) ? '1' : '0',
                 'email_logo_url'           => esc_url_raw(wp_unslash($_POST['email_logo_url'] ?? '')),
                 'email_header_color'       => sanitize_hex_color(wp_unslash($_POST['email_header_color'] ?? '')) ?: '#6d28d9',
                 'email_brand_name'         => sanitize_text_field(wp_unslash($_POST['email_brand_name'] ?? '')),
                 'email_footer_text'        => sanitize_text_field(wp_unslash($_POST['email_footer_text'] ?? '')),
                 'products_grid_limit'      => max(0, intval($_POST['products_grid_limit'] ?? 12)),
                 'show_products_title'      => isset($_POST['show_products_title']) ? '1' : '0',
+                'pdf_company_name'         => sanitize_text_field(wp_unslash($_POST['pdf_company_name'] ?? '')),
+                'pdf_tax_id'               => sanitize_text_field(wp_unslash($_POST['pdf_tax_id'] ?? '')),
+                'pdf_accent_color'         => sanitize_hex_color(wp_unslash($_POST['pdf_accent_color'] ?? '')) ?: '#6d28d9',
+                'pdf_terms_text'           => sanitize_textarea_field(wp_unslash($_POST['pdf_terms_text'] ?? '')),
+                'enable_tiered_pricing'    => isset($_POST['enable_tiered_pricing']) ? '1' : '0',
+                'tiered_price_breaks'      => sanitize_textarea_field(wp_unslash($_POST['tiered_price_breaks'] ?? '')),
             ];
 
             update_option('evonee_quote_settings', $new_settings);
@@ -2277,6 +2985,40 @@ class Evonee_Quote_Admin {
                                     </label>
                                 </div>
 
+                                <div class="evonee-setting-row">
+                                    <div class="evonee-setting-info">
+                                        <strong>🎯 WooCommerce Quote Trigger Condition</strong>
+                                        <p>Choose when to trigger Quote mode on WooCommerce product pages.</p>
+                                    </div>
+                                    <select name="wc_quote_condition" style="min-width:180px;">
+                                        <option value="all" <?php selected($settings['wc_quote_condition'], 'all'); ?>>All Products & Catalog</option>
+                                        <option value="out_of_stock" <?php selected($settings['wc_quote_condition'], 'out_of_stock'); ?>>Out of Stock Products Only</option>
+                                        <option value="guests" <?php selected($settings['wc_quote_condition'], 'guests'); ?>>Guest / Unauthenticated Users Only</option>
+                                    </select>
+                                </div>
+
+                                <div class="evonee-setting-row">
+                                    <div class="evonee-setting-info">
+                                        <strong>🙈 Hide Product Prices (Call for Quote)</strong>
+                                        <p>Hides traditional WooCommerce product price display and replaces with "Price Available Upon Quote".</p>
+                                    </div>
+                                    <label class="evonee-toggle">
+                                        <input type="checkbox" name="wc_hide_price" value="1" <?php checked($settings['wc_hide_price'], '1'); ?>>
+                                        <span class="evonee-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div class="evonee-setting-row">
+                                    <div class="evonee-setting-info">
+                                        <strong>🛒 Enable Bulk Cart Quote Request (Cart & Checkout)</strong>
+                                        <p>Appends a "Request Quote for Cart" button on WooCommerce Cart & Checkout pages to convert cart contents into a bulk B2B quote request.</p>
+                                    </div>
+                                    <label class="evonee-toggle">
+                                        <input type="checkbox" name="enable_cart_quote" value="1" <?php checked($settings['enable_cart_quote'], '1'); ?>>
+                                        <span class="evonee-slider"></span>
+                                    </label>
+                                </div>
+
                             </div>
                         </div>
 
@@ -2362,7 +3104,10 @@ class Evonee_Quote_Admin {
                                                 <select name="custom_fields[<?php echo esc_attr($index); ?>][type]" class="widefat">
                                                     <option value="text" <?php selected($field['type'], 'text'); ?>>Text Input</option>
                                                     <option value="select" <?php selected($field['type'], 'select'); ?>>Dropdown Select</option>
+                                                    <option value="radio" <?php selected($field['type'], 'radio'); ?>>Radio Buttons</option>
+                                                    <option value="checkbox" <?php selected($field['type'], 'checkbox'); ?>>Single Checkbox</option>
                                                     <option value="number" <?php selected($field['type'], 'number'); ?>>Number</option>
+                                                    <option value="date" <?php selected($field['type'], 'date'); ?>>Date Picker</option>
                                                     <option value="textarea" <?php selected($field['type'], 'textarea'); ?>>Textarea</option>
                                                 </select>
                                             </div>
@@ -2404,16 +3149,50 @@ class Evonee_Quote_Admin {
                                     <p class="description">All incoming customer quote request notifications will be sent to this email address.</p>
                                 </div>
 
-                                <div style="margin-bottom: 16px;">
-                                    <label style="font-weight:700; display:block; margin-bottom:6px;">Currency Symbol:</label>
-                                    <input type="text" name="currency_symbol" value="<?php echo esc_attr($settings['currency_symbol']); ?>" style="width:80px;" required>
-                                    <p class="description">Currency symbol used for live price calculation estimates (e.g. $, €, £, ৳, AED).</p>
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Currency Symbol:</label>
+                                        <input type="text" name="currency_symbol" value="<?php echo esc_attr($settings['currency_symbol'] ?? '$'); ?>" class="regular-text" placeholder="$" required>
+                                        <p class="description">Symbol displayed in UI & PDFs (e.g. $, €, £, ¥, ৳, AED, ₹, kr).</p>
+                                    </div>
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Currency Code (ISO 4217):</label>
+                                        <input type="text" name="currency_code" value="<?php echo esc_attr($settings['currency_code'] ?? 'USD'); ?>" class="regular-text" placeholder="USD" maxlength="4">
+                                        <p class="description">Three-letter ISO currency code (e.g. USD, EUR, GBP, AUD, CAD).</p>
+                                    </div>
                                 </div>
 
-                                <div style="margin-bottom: 16px;">
-                                    <label style="font-weight:700; display:block; margin-bottom:6px;">Product Grid — Items to Display:</label>
-                                    <input type="number" name="products_grid_limit" value="<?php echo esc_attr($settings['products_grid_limit']); ?>" min="0" max="100" style="width:80px;" required>
-                                    <p class="description">How many products to show in the <code>[evonee_products]</code> grid. Use <code>0</code> to show all. Shortcode <code>limit</code> attribute overrides this.</p>
+                                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:16px;">
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Currency Position:</label>
+                                        <select name="currency_pos" class="widefat">
+                                            <option value="left" <?php selected($settings['currency_pos'] ?? 'left', 'left'); ?>>Left ($99.00)</option>
+                                            <option value="right" <?php selected($settings['currency_pos'] ?? 'left', 'right'); ?>>Right (99.00$)</option>
+                                            <option value="left_space" <?php selected($settings['currency_pos'] ?? 'left', 'left_space'); ?>>Left with space ($ 99.00)</option>
+                                            <option value="right_space" <?php selected($settings['currency_pos'] ?? 'left', 'right_space'); ?>>Right with space (99.00 $)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Decimal Separator:</label>
+                                        <input type="text" name="decimal_separator" value="<?php echo esc_attr($settings['decimal_separator'] ?? '.'); ?>" style="width:60px;">
+                                    </div>
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Thousand Separator:</label>
+                                        <input type="text" name="thousand_separator" value="<?php echo esc_attr($settings['thousand_separator'] ?? ','); ?>" style="width:60px;">
+                                    </div>
+                                </div>
+
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Number of Decimals:</label>
+                                        <input type="number" name="decimals" value="<?php echo esc_attr($settings['decimals'] ?? 2); ?>" min="0" max="4" style="width:70px;">
+                                        <p class="description">Set to 0 for currencies without cents/decimals (e.g. JPY, KRW).</p>
+                                    </div>
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Product Grid — Items to Display:</label>
+                                        <input type="number" name="products_grid_limit" value="<?php echo esc_attr($settings['products_grid_limit']); ?>" min="0" max="100" style="width:80px;" required>
+                                        <p class="description">How many products to show in <code>[evonee_products]</code>.</p>
+                                    </div>
                                 </div>
 
                                 <div class="evonee-setting-row" style="border-bottom:none; padding-bottom:0;">
@@ -2427,6 +3206,17 @@ class Evonee_Quote_Admin {
                                     </label>
                                 </div>
 
+                                <div class="evonee-setting-row" style="border-top:1px solid #e2e8f0; margin-top:12px; padding-top:12px; border-bottom:none; padding-bottom:0;">
+                                    <div class="evonee-setting-info">
+                                        <strong>Data Cleanup on Uninstallation</strong>
+                                        <p style="color:#ef4444;">Erase all plugin database tables, logs, and settings when deleted from WordPress Plugins list.</p>
+                                    </div>
+                                    <label class="evonee-toggle">
+                                        <input type="checkbox" name="delete_data_on_uninstall" value="1" <?php checked($settings['delete_data_on_uninstall'] ?? '0', '1'); ?>>
+                                        <span class="evonee-slider"></span>
+                                    </label>
+                                </div>
+
                             </div>
                         </div>
 
@@ -2434,7 +3224,7 @@ class Evonee_Quote_Admin {
                         <div class="evonee-doc-card" style="margin-top:20px;">
                             <div class="evonee-card-header">
                                 <span class="dashicons dashicons-email-alt"></span>
-                                <h2>4. Email Template Branding</h2>
+                                <h2>5. Email Template Branding</h2>
                             </div>
                             <div class="evonee-card-body">
                                 <p>Customize how your notification and auto-reply emails look. Changes apply to both admin and customer emails.</p>
@@ -2473,7 +3263,7 @@ class Evonee_Quote_Admin {
                         <div class="evonee-doc-card" style="margin-top:20px;">
                             <div class="evonee-card-header">
                                 <span class="dashicons dashicons-format-chat"></span>
-                                <h2>5. Quick Reply Email Templates</h2>
+                                <h2>6. Quick Reply Email Templates</h2>
                             </div>
                             <div class="evonee-card-body">
                                 <p>Add pre-written email templates for common responses. Templates appear as a dropdown in the "Reply to Customer" modal. Use variables: <code>{customer_name}</code>, <code>{product}</code>, <code>{quote_id}</code>.</p>
@@ -2515,7 +3305,7 @@ class Evonee_Quote_Admin {
                             <div class="evonee-doc-card">
                                 <div class="evonee-card-header">
                                     <span class="dashicons dashicons-shield"></span>
-                                    <h2>4. Security & Integrations (Google Sheets, reCAPTCHA v3, Webhooks & Slack)</h2>
+                                    <h2>4. Security & Integrations (Google Sheets, reCAPTCHA v3, Webhooks, Slack & Discord)</h2>
                                 </div>
                             <div class="evonee-card-body">
                                 
@@ -2605,7 +3395,7 @@ class Evonee_Quote_Admin {
                                 </div>
 
                                 <!-- Discord Notification -->
-                                <div style="margin-bottom:20px; border-bottom:1px solid #e2e8f0; padding-bottom:16px;">
+                                <div style="margin-bottom:20px;">
                                     <div class="evonee-setting-row" style="margin-bottom:10px;">
                                         <div class="evonee-setting-info">
                                             <strong>🎮 Discord Server Notifications</strong>
@@ -2621,10 +3411,42 @@ class Evonee_Quote_Admin {
                                         <input type="url" name="discord_webhook_url" value="<?php echo esc_attr(isset($settings['discord_webhook_url']) ? $settings['discord_webhook_url'] : ''); ?>" class="widefat" placeholder="https://discord.com/api/webhooks/...">
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- PDF Customizer Card (Step 3) -->
+                        <div class="evonee-doc-card" style="margin-top:20px;">
+                            <div class="evonee-card-header">
+                                <span class="dashicons dashicons-pdf"></span>
+                                <h2>8. PDF Quote Sheet Customizer & Branding</h2>
+                            </div>
+                            <div class="evonee-card-body">
+                                <p>Customize the official PDF quote sheet generated for customers and printable quotes.</p>
+
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:14px;">
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:4px;">Company Name on PDF:</label>
+                                        <input type="text" name="pdf_company_name" value="<?php echo esc_attr($settings['pdf_company_name'] ?? ''); ?>" class="widefat" placeholder="Evonee Promotional Products">
+                                    </div>
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:4px;">Tax / VAT / Business ID:</label>
+                                        <input type="text" name="pdf_tax_id" value="<?php echo esc_attr($settings['pdf_tax_id'] ?? ''); ?>" class="widefat" placeholder="VAT-123456789 / EIN">
+                                    </div>
+                                </div>
+
+                                <div style="margin-bottom:14px;">
+                                    <label style="font-weight:700; display:block; margin-bottom:4px;">PDF Header Accent Color:</label>
+                                    <input type="color" name="pdf_accent_color" value="<?php echo esc_attr($settings['pdf_accent_color'] ?? '#6d28d9'); ?>" style="height:36px; width:60px; cursor:pointer; border:1px solid #d1d5db; border-radius:4px;">
+                                </div>
+
+                                <div style="margin-bottom:14px;">
+                                    <label style="font-weight:700; display:block; margin-bottom:4px;">Terms & Conditions Text:</label>
+                                    <textarea name="pdf_terms_text" rows="4" class="widefat" placeholder="1. Free proof included..."><?php echo esc_textarea($settings['pdf_terms_text'] ?? ''); ?></textarea>
+                                </div>
 
                                 <!-- PDF Email Attachment Toggle -->
                                 <div>
-                                    <div class="evonee-setting-row">
+                                    <div class="evonee-setting-row" style="border-bottom:none; padding-bottom:0;">
                                         <div class="evonee-setting-info">
                                             <strong>📄 PDF Quote Attachment in Emails</strong>
                                             <p>Automatically attach a generated PDF Quote Summary file to sales notification & customer auto-reply emails.</p>
@@ -2635,7 +3457,33 @@ class Evonee_Quote_Admin {
                                         </label>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
 
+                        <!-- Dynamic Volume Tiered Pricing Card (Step 4) -->
+                        <div class="evonee-doc-card" style="margin-top:20px;">
+                            <div class="evonee-card-header">
+                                <span class="dashicons dashicons-chart-line"></span>
+                                <h2>9. Dynamic Volume Tiered Pricing (Bulk Discount Breaks)</h2>
+                            </div>
+                            <div class="evonee-card-body">
+                                <div class="evonee-setting-row" style="margin-bottom:14px;">
+                                    <div class="evonee-setting-info">
+                                        <strong>📊 Enable Volume Discount Table in Modal</strong>
+                                        <p>Displays a live volume discount table in the quote modal as customers enter quantity.</p>
+                                    </div>
+                                    <label class="evonee-toggle">
+                                        <input type="checkbox" name="enable_tiered_pricing" value="1" <?php checked($settings['enable_tiered_pricing'] ?? '1', '1'); ?>>
+                                        <span class="evonee-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div>
+                                    <label style="font-weight:700; display:block; margin-bottom:4px;">Quantity Tier Breaks & Unit Prices (Format: <code>Quantity|UnitPrice</code> per line):</label>
+                                    <textarea name="tiered_price_breaks" rows="5" class="widefat" style="font-family:monospace;" placeholder="50|5.00&#10;100|4.50&#10;500|3.80&#10;1000|3.20"><?php echo esc_textarea($settings['tiered_price_breaks'] ?? ''); ?></textarea>
+                                    <p class="description">Example: <code>50|5.00</code> means for 50+ units, estimated unit price is $5.00.</p>
+                                </div>
+>>>>>>> origin/main
                             </div>
                         </div>
                     </div> <!-- End #tab-integrations -->
@@ -2721,7 +3569,10 @@ class Evonee_Quote_Admin {
                                 <select name="custom_fields[${index}][type]" class="widefat">
                                     <option value="text">Text Input</option>
                                     <option value="select">Dropdown Select</option>
+                                    <option value="radio">Radio Buttons</option>
+                                    <option value="checkbox">Single Checkbox</option>
                                     <option value="number">Number</option>
+                                    <option value="date">Date Picker</option>
                                     <option value="textarea">Textarea</option>
                                 </select>
                             </div>

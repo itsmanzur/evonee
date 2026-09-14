@@ -1,0 +1,48 @@
+# Translation of Evonee - Get Quote System in English (US)
+# Copyright (C) 2026 Evonee Team
+# This file is distributed under the same license as the Evonee - Get Quote System package.
+msgid ""
+msgstr ""
+"Project-Id-Version: Evonee - Get Quote System 1.0.0\n"
+"Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/evonee\n"
+"POT-Creation-Date: 2026-09-14 12:00+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: en_US\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: evonee.php:3
+msgid "Evonee - Get Quote System"
+msgstr ""
+
+#: evonee.php:4
+msgid "Professional AJAX Quote Modal, Price Estimator, PDF Sheet Generator & CRM Lead Management for WordPress and WooCommerce."
+msgstr ""
+
+#: inc/class-quote-admin.php:28
+msgid "Evonee Quotes"
+msgstr ""
+
+#: inc/class-quote-admin.php:39
+msgid "Executive Dashboard"
+msgstr ""
+
+#: inc/class-quote-admin.php:49
+msgid "Quote Submissions"
+msgstr ""
+
+#: inc/class-quote-admin.php:61
+msgid "Analytics & Reports"
+msgstr ""
+
+#: inc/class-quote-admin.php:71
+msgid "Settings & Modules"
+msgstr ""
+
+#: inc/class-quote-admin.php:80
+msgid "Documentation & Help"
+msgstr ""
