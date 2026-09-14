@@ -32,6 +32,12 @@ require_once EVONEE_PLUGIN_DIR . 'inc/class-quote-elementor.php';
 // Plugin Activation Hook - Create Database Table
 register_activation_hook(__FILE__, ['Evonee_Quote_Ajax', 'create_submissions_table']);
 
+// Plugin Deactivation Hook - Clear scheduled cron jobs
+register_deactivation_hook(__FILE__, function() {
+    wp_clear_scheduled_hook('evonee_weekly_digest_cron');
+    wp_clear_scheduled_hook('evonee_daily_quote_cron');
+});
+
 // Initialize Core Plugin Components
 add_action('plugins_loaded', function() {
     load_plugin_textdomain('evonee', false, dirname(plugin_basename(__FILE__)) . '/languages');
@@ -40,6 +46,15 @@ add_action('plugins_loaded', function() {
     Evonee_Quote_Admin::init();
     // Runtime DB migration: ensure admin_notes column exists
     Evonee_Quote_Ajax::maybe_add_admin_notes_column();
+
+    // FIX BUG #1: Schedule cron jobs inside plugins_loaded (not at top-level)
+    // FIX BUG #8: Register daily cron that was missing
+    if (!wp_next_scheduled('evonee_weekly_digest_cron')) {
+        wp_schedule_event(time(), 'weekly', 'evonee_weekly_digest_cron');
+    }
+    if (!wp_next_scheduled('evonee_daily_quote_cron')) {
+        wp_schedule_event(time(), 'daily', 'evonee_daily_quote_cron');
+    }
 });
 
 // Register Elementor Widget (Phase 2.3)
@@ -75,9 +90,10 @@ add_action('wp_dashboard_setup', function() {
 
 // Schedule Weekly Sales Digest Cron (Step 7)
 add_action('evonee_weekly_digest_cron', ['Evonee_Quote_Mailer', 'send_weekly_digest']);
-if (!wp_next_scheduled('evonee_weekly_digest_cron')) {
-    wp_schedule_event(time(), 'weekly', 'evonee_weekly_digest_cron');
-}
+
+// Daily Cron: Expiry Reminders & Token Cleanup (Phase 4.1)
+// FIX BUG #8: Register the daily cron hook handler (was missing)
+add_action('evonee_daily_quote_cron', ['Evonee_Quote_Ajax', 'run_daily_quote_cron']);
 
 // Handle Public Customer Quote Acceptance / Decline / PDF Download Endpoint (Phase 3 & Step 3)
 add_action('template_redirect', function() {
@@ -99,11 +115,18 @@ add_action('template_redirect', function() {
         }
 
         if ($quote) {
-            $_GET['action'] = 'generate_pdf_quote';
-            $_GET['id']     = $quote->id;
-            $_REQUEST['_wpnonce'] = wp_create_nonce('eq_generate_pdf_' . $quote->id);
-            $admin = new Evonee_Quote_Admin();
-            $admin->render_submissions_page();
+            // FIX BUG #5: Instead of manually overriding nonces and GET superglobals,
+            // call the PDF generator directly with verified quote object
+            if (method_exists('Evonee_Quote_Admin', 'stream_pdf_for_quote')) {
+                Evonee_Quote_Admin::stream_pdf_for_quote($quote);
+            } else {
+                // Fallback: set verified nonce securely
+                $_GET['action']       = 'generate_pdf_quote';
+                $_GET['id']           = absint($quote->id);
+                $_REQUEST['_wpnonce'] = wp_create_nonce('eq_generate_pdf_' . absint($quote->id));
+                $admin = new Evonee_Quote_Admin();
+                $admin->render_submissions_page();
+            }
             exit;
         }
     }
@@ -239,7 +262,17 @@ add_action('template_redirect', function() {
             exit;
         }
 
-        $sig_data = isset($_POST['signature_data']) ? sanitize_text_field(wp_unslash($_POST['signature_data'])) : '';
+        // FIX BUG #4: Properly validate base64 PNG data URL instead of sanitize_text_field
+        // which would truncate the base64 string
+        $sig_data_raw = isset($_POST['signature_data']) ? wp_unslash($_POST['signature_data']) : '';
+        $sig_data = '';
+        if (!empty($sig_data_raw)) {
+            // Only accept valid base64-encoded PNG data URLs (from canvas.toDataURL)
+            if (preg_match('/^data:image\/png;base64,[A-Za-z0-9+\/]+=*$/', $sig_data_raw)) {
+                $sig_data = $sig_data_raw;
+            }
+            // Reject anything that doesn't match — prevents XSS via data URI injection
+        }
         $new_status = ($action === 'accept_quote') ? 'approved' : 'rejected';
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching

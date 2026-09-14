@@ -37,14 +37,17 @@ class Evonee_Quote_Mailer {
 
         $settings = Evonee_Quote_Admin::get_settings();
         $brand_name = !empty($settings['email_brand_name']) ? $settings['email_brand_name'] : 'Evonee';
+        // FIX BUG #13: Use get_sales_email() instead of hardcoded EQ_SALES_EMAIL constant
+        // This respects the sales email configured in plugin settings
+        $sales_email = Evonee_Quote_Ajax::get_sales_email();
         $accept_url  = add_query_arg(['eq_action' => 'accept_quote', 'token' => $quote->acceptance_token], home_url());
         $decline_url = add_query_arg(['eq_action' => 'decline_quote', 'token' => $quote->acceptance_token], home_url());
 
         $subject = '⏰ Reminder: Your Quote for ' . $quote->product . ' is expiring soon!';
         $headers = [
             'Content-Type: text/html; charset=UTF-8',
-            'From: ' . $brand_name . ' Sales <' . EQ_SALES_EMAIL . '>',
-            'Reply-To: ' . EQ_SALES_EMAIL
+            'From: ' . $brand_name . ' Sales <' . $sales_email . '>',
+            'Reply-To: ' . $sales_email
         ];
 
         $mail_body = '

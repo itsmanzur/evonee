@@ -70,10 +70,12 @@ class Evonee_Quote_Modal {
 
     /**
      * WooCommerce "Quote Only" Mode (Module 5)
+     * FIX BUG #14: Removed reliance on global $product in 'wp' hook
+     * which is not reliably set outside of the loop
      */
     public function wc_quote_only_mode() {
-        global $product;
-        if ($this->should_apply_wc_quote_mode($product)) {
+        // Check mode without product context (product-specific check happens in loop hooks)
+        if ($this->should_apply_wc_quote_mode()) {
             remove_action('woocommerce_after_shop_loop_item', 'woocommerce_template_loop_add_to_cart', 10);
             remove_action('woocommerce_single_product_summary', 'woocommerce_template_single_add_to_cart', 30);
             add_action('woocommerce_single_product_summary', [$this, 'render_wc_single_quote_btn'], 30);
@@ -214,6 +216,8 @@ class Evonee_Quote_Modal {
         wp_localize_script('evonee-modal-js', 'eqQuoteData', [
             'ajaxUrl'          => admin_url('admin-ajax.php'),
             'nonce'            => wp_create_nonce('eq_submit_quote'),
+            // FIX BUG #2 & #3: Add dedicated nonce for messaging system
+            'messageNonce'     => wp_create_nonce('eq_message_nonce'),
             'recaptchaSiteKey' => $recaptcha_site_key,
             'placeholder'      => self::get_svg_placeholder(),
         ]);
@@ -378,24 +382,40 @@ class Evonee_Quote_Modal {
                     <script>
                     document.addEventListener('DOMContentLoaded', function() {
                         const ajaxUrl = '<?php echo esc_url(admin_url('admin-ajax.php')); ?>';
-                        
+                        // FIX BUG #2 & #3: Use the dedicated message nonce for AJAX security
+                        const msgNonce = (typeof eqQuoteData !== 'undefined' && eqQuoteData.messageNonce)
+                            ? eqQuoteData.messageNonce
+                            : '<?php echo esc_js(wp_create_nonce('eq_message_nonce')); ?>';
+
+                        // FIX BUG #10: Safe HTML builder to prevent XSS via message content
+                        function escHtml(str) {
+                            const d = document.createElement('div');
+                            d.appendChild(document.createTextNode(str));
+                            return d.innerHTML;
+                        }
+
+                        function buildMessageHtml(m) {
+                            const isAdmin = m.sender_type === 'admin';
+                            const bg      = isAdmin ? '#faf5ff' : '#f0fdf4';
+                            const border  = isAdmin ? '#e9d5ff' : '#bbf7d0';
+                            const label   = isAdmin ? '🛡️ Support Team' : '👤 You';
+                            // FIX BUG #10: Use escHtml() for message content — prevents XSS
+                            return `<div style="background:${bg}; border:1px solid ${border}; padding:6px 10px; border-radius:6px; margin-bottom:6px;">
+                                <strong>${label}</strong> <small style="color:#94a3b8;">${escHtml(m.created_at)}</small>
+                                <div style="margin-top:2px; color:#1e293b;">${escHtml(m.message)}</div>
+                            </div>`;
+                        }
+
                         function fetchPortalMsgs(subId) {
                             const container = document.getElementById('eq-portal-msgs-' + subId);
                             if (!container) return;
-                            fetch(ajaxUrl + '?action=eq_get_messages&submission_id=' + subId)
+                            // FIX BUG #3: Include nonce in message fetch request
+                            fetch(ajaxUrl + '?action=eq_get_messages&submission_id=' + subId + '&nonce=' + encodeURIComponent(msgNonce))
                                 .then(r => r.json())
                                 .then(data => {
                                     if (data.success && data.data && data.data.messages && data.data.messages.length > 0) {
-                                        container.innerHTML = data.data.messages.map(m => {
-                                            const isAdmin = m.sender_type === 'admin';
-                                            const bg = isAdmin ? '#faf5ff' : '#f0fdf4';
-                                            const border = isAdmin ? '#e9d5ff' : '#bbf7d0';
-                                            const label = isAdmin ? '🛡️ Support Team' : '👤 You';
-                                            return `<div style="background:${bg}; border:1px solid ${border}; padding:6px 10px; border-radius:6px; margin-bottom:6px;">
-                                                <strong>${label}</strong> <small style="color:#94a3b8;">${m.created_at}</small>
-                                                <div style="margin-top:2px; color:#1e293b;">${m.message}</div>
-                                            </div>`;
-                                        }).join('');
+                                        // FIX BUG #10: Use safe buildMessageHtml() instead of direct template interpolation
+                                        container.innerHTML = data.data.messages.map(buildMessageHtml).join('');
                                         container.scrollTop = container.scrollHeight;
                                     } else {
                                         container.innerHTML = '<span style="color:#94a3b8; font-style:italic;">No discussion messages yet. Start the conversation below!</span>';
@@ -430,6 +450,8 @@ class Evonee_Quote_Modal {
                                 fd.append('submission_id', subId);
                                 fd.append('sender_type', 'customer');
                                 fd.append('message', msg);
+                                // FIX BUG #2: Include nonce in send message request
+                                fd.append('nonce', msgNonce);
 
                                 fetch(ajaxUrl, { method: 'POST', body: fd })
                                     .then(r => r.json())
