@@ -17,8 +17,8 @@ class Evonee_Quote_Admin {
         }
         wp_enqueue_style('evonee-admin-css', EVONEE_PLUGIN_URL . 'assets/css/admin.css', [], EVONEE_VERSION);
 
-        if (strpos($hook, 'evonee-analytics') !== false) {
-            wp_enqueue_script('chartjs', 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js', [], '4.4.1', true);
+        if (strpos($hook, 'evonee-analytics') !== false || strpos($hook, 'evonee-quotes') !== false || strpos($hook, 'evonee-dashboard') !== false) {
+            wp_enqueue_script('chartjs', EVONEE_PLUGIN_URL . 'assets/js/chart.min.js', [], '4.4.1', true);
         }
     }
 
@@ -28,9 +28,18 @@ class Evonee_Quote_Admin {
             'Evonee Quotes',
             'manage_options',
             'evonee-quotes',
-            [$this, 'render_submissions_page'],
+            [$this, 'render_dashboard_page'],
             'dashicons-clipboard',
             30
+        );
+
+        add_submenu_page(
+            'evonee-quotes',
+            'Executive Dashboard',
+            'Dashboard',
+            'manage_options',
+            'evonee-quotes',
+            [$this, 'render_dashboard_page']
         );
 
         add_submenu_page(
@@ -38,7 +47,7 @@ class Evonee_Quote_Admin {
             'Quote Submissions',
             'Submissions',
             'manage_options',
-            'evonee-quotes',
+            'evonee-submissions',
             [$this, 'render_submissions_page']
         );
 
@@ -202,9 +211,401 @@ class Evonee_Quote_Admin {
             <!-- Footer -->
             <div style="margin-top:12px; display:flex; justify-content:space-between; align-items:center;">
                 <span style="font-size:11px; color:#9ca3af;">Total: <strong><?php echo esc_html($total); ?></strong> submissions</span>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-quotes')); ?>" class="button button-primary button-small" style="background:#6d28d9; border-color:#6d28d9;">View All &rarr;</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-submissions')); ?>" class="button button-primary button-small" style="background:#6d28d9; border-color:#6d28d9;">View All &rarr;</a>
             </div>
         </div>
+        <?php
+    }
+
+    /**
+     * Render Evonee Executive Dashboard Page (v3.1 Command Center)
+     */
+    public function render_dashboard_page() {
+        // Fallback for direct query links to render Submissions page seamlessly
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        if (!empty($_GET['s']) || !empty($_GET['status_filter']) || !empty($_GET['action']) || !empty($_GET['paged']) || isset($_GET['id']) || (isset($_GET['view']) && $_GET['view'] === 'submissions')) {
+            $this->render_submissions_page();
+            return;
+        }
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'eq_quote_submissions';
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+        if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table_name)) !== $table_name) {
+            Evonee_Quote_Ajax::create_submissions_table();
+        }
+
+        $stats = get_transient('evonee_dashboard_stats');
+        if (false === $stats) {
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $total_count     = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions");
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $new_count       = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions WHERE status = %s", 'new'));
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $pending_count   = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions WHERE status = %s", 'pending'));
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $quoted_count    = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions WHERE status = %s", 'quoted'));
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $approved_count  = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions WHERE status = %s", 'approved'));
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $completed_count = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions WHERE status = %s", 'completed'));
+
+            // Total Quoted Revenue Value ($)
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $total_pipeline_val = (float) $wpdb->get_var("SELECT SUM(quoted_price) FROM {$wpdb->prefix}eq_quote_submissions WHERE quoted_price IS NOT NULL AND quoted_price > 0");
+
+            // Overdue / Urgent Action Needed Count
+            $today = current_time('Y-m-d');
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $urgent_count = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions WHERE (status IN ('new', 'pending') AND created_at <= %s) OR (follow_up_date IS NOT NULL AND follow_up_date <= %s)",
+                wp_date('Y-m-d H:i:s', time() - (2 * DAY_IN_SECONDS)),
+                $today
+            ));
+
+            // Recent 5 Submissions
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $recent_quotes = $wpdb->get_results("SELECT id, full_name, email, product, quantity, quoted_price, status, created_at FROM {$wpdb->prefix}eq_quote_submissions ORDER BY id DESC LIMIT 5");
+
+            // Monthly Trends (Last 6 Months)
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $monthly_trends = $wpdb->get_results("
+                SELECT DATE_FORMAT(created_at, '%b %Y') as month_label, COUNT(*) as total 
+                FROM {$wpdb->prefix}eq_quote_submissions 
+                GROUP BY DATE_FORMAT(created_at, '%Y-%m') 
+                ORDER BY created_at ASC LIMIT 6
+            ");
+
+            // Top Requested Products (Top 3)
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $top_products = $wpdb->get_results("
+                SELECT product, COUNT(*) as total
+                FROM {$wpdb->prefix}eq_quote_submissions
+                GROUP BY product
+                ORDER BY total DESC
+                LIMIT 3
+            ");
+
+            $stats = compact('total_count', 'new_count', 'pending_count', 'quoted_count', 'approved_count', 'completed_count', 'total_pipeline_val', 'urgent_count', 'recent_quotes', 'monthly_trends', 'top_products');
+            set_transient('evonee_dashboard_stats', $stats, 10 * MINUTE_IN_SECONDS);
+        } else {
+            $total_count        = $stats['total_count'];
+            $new_count          = $stats['new_count'];
+            $pending_count      = $stats['pending_count'];
+            $quoted_count       = $stats['quoted_count'];
+            $approved_count     = $stats['approved_count'];
+            $completed_count    = $stats['completed_count'];
+            $total_pipeline_val = $stats['total_pipeline_val'];
+            $urgent_count       = $stats['urgent_count'];
+            $recent_quotes      = $stats['recent_quotes'];
+            $monthly_trends     = $stats['monthly_trends'];
+            $top_products       = $stats['top_products'];
+        }
+
+        $won_deals = $approved_count + $completed_count;
+        $win_rate  = $total_count > 0 ? round(($won_deals / $total_count) * 100, 1) : 0;
+        $settings  = self::get_settings();
+        $curr_sym  = esc_html($settings['currency_symbol'] ?? '$');
+
+        // System Health Diagnostics Checks
+        $cron_active     = wp_next_scheduled('evonee_daily_quote_cron') ? true : false;
+        $wc_active       = class_exists('WooCommerce');
+        $recaptcha_ready = (!empty($settings['enable_recaptcha']) && !empty($settings['recaptcha_site_key']));
+        $webhook_ready   = (!empty($settings['enable_webhook']) && !empty($settings['webhook_url']));
+        $slack_ready     = (!empty($settings['enable_slack']) && !empty($settings['slack_webhook_url']));
+        $user_name       = wp_get_current_user()->display_name ?: 'Admin';
+        ?>
+        <div class="wrap evonee-admin-wrap">
+            <!-- Hero Header -->
+            <div class="evonee-docs-header" style="background: linear-gradient(135deg, #0f172a 0%, #3b0764 50%, #6d28d9 100%); padding:28px 32px; border-radius:14px; margin-bottom:24px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+                    <div>
+                        <h1 style="color:#ffffff; font-size:26px; font-weight:800; margin:0 0 6px; display:flex; align-items:center; gap:10px;">
+                            ⚡ Evonee Executive Command Center
+                        </h1>
+                        <p class="subtitle" style="color:#cbd5e1; font-size:14px; margin:0;">
+                            Welcome back, <strong><?php echo esc_html($user_name); ?></strong>! Overview of your B2B quotation pipeline, automated reminders, and revenue metrics.
+                        </p>
+                    </div>
+                    <div class="evonee-docs-brand" style="text-align:right;">
+                        <span style="background:rgba(255,255,255,0.15); backdrop-filter:blur(8px); color:#ffffff; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:700; border:1px solid rgba(255,255,255,0.2);">
+                            v3.1 Flagship Edition
+                        </span>
+                        <div style="font-size:11px; color:#cbd5e1; margin-top:6px;">📅 <?php echo esc_html(wp_date('F j, Y')); ?></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Urgent Action Alert Banner -->
+            <?php if ($urgent_count > 0): ?>
+                <div class="evonee-dash-alert" style="background:#fff7ed; border:1px solid #ffedd5; border-left:4px solid #f97316; border-radius:10px; padding:14px 20px; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; gap:16px;">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <span style="font-size:24px;">⚠️</span>
+                        <div>
+                            <strong style="color:#9a3412; font-size:14px;">Urgent Lead Action Required!</strong>
+                            <p style="color:#c2410c; font-size:13px; margin:2px 0 0;">You have <strong><?php echo esc_html($urgent_count); ?></strong> quote request(s) awaiting response or overdue for follow-up.</p>
+                        </div>
+                    </div>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-submissions&date_range=followup_due')); ?>" class="button button-primary" style="background:#ea580c; border-color:#ea580c; font-weight:700; border-radius:6px; white-space:nowrap;">View Pending Quotes &rarr;</a>
+                </div>
+            <?php endif; ?>
+
+            <!-- KPI Metric Cards Grid -->
+            <div class="evonee-metrics-grid" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:18px; margin-bottom:24px;">
+                <div class="evonee-stat-card" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:20px; display:flex; align-items:center; gap:16px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
+                    <div class="evonee-stat-icon" style="background:#faf5ff; color:#6d28d9; font-size:24px; width:52px; height:52px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">📥</div>
+                    <div>
+                        <div class="evonee-stat-val" style="font-size:26px; font-weight:800; color:#0f172a; line-height:1.2;"><?php echo esc_html(number_format($total_count)); ?></div>
+                        <div class="evonee-stat-lbl" style="font-size:12px; color:#64748b; font-weight:600; margin-top:2px;">Total Quotes Received</div>
+                    </div>
+                </div>
+
+                <div class="evonee-stat-card" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:20px; display:flex; align-items:center; gap:16px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
+                    <div class="evonee-stat-icon" style="background:#fff7ed; color:#ea580c; font-size:24px; width:52px; height:52px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">⏳</div>
+                    <div>
+                        <div class="evonee-stat-val" style="font-size:26px; font-weight:800; color:#ea580c; line-height:1.2;"><?php echo esc_html(number_format($new_count + $pending_count)); ?></div>
+                        <div class="evonee-stat-lbl" style="font-size:12px; color:#64748b; font-weight:600; margin-top:2px;">Action Needed (New / Pending)</div>
+                    </div>
+                </div>
+
+                <div class="evonee-stat-card" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:20px; display:flex; align-items:center; gap:16px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
+                    <div class="evonee-stat-icon" style="background:#eff6ff; color:#2563eb; font-size:24px; width:52px; height:52px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">💰</div>
+                    <div>
+                        <div class="evonee-stat-val" style="font-size:26px; font-weight:800; color:#2563eb; line-height:1.2;"><?php echo esc_html($curr_sym) . esc_html(number_format($total_pipeline_val, 2)); ?></div>
+                        <div class="evonee-stat-lbl" style="font-size:12px; color:#64748b; font-weight:600; margin-top:2px;">Gross Quoted Pipeline</div>
+                    </div>
+                </div>
+
+                <div class="evonee-stat-card" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:20px; display:flex; align-items:center; gap:16px; box-shadow:0 2px 4px rgba(0,0,0,0.02);">
+                    <div class="evonee-stat-icon" style="background:#f0fdf4; color:#16a34a; font-size:24px; width:52px; height:52px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">🏆</div>
+                    <div>
+                        <div class="evonee-stat-val" style="font-size:26px; font-weight:800; color:#16a34a; line-height:1.2;"><?php echo esc_html(number_format($won_deals)); ?></div>
+                        <div class="evonee-stat-lbl" style="font-size:12px; color:#64748b; font-weight:600; margin-top:2px;">Won Deals (<?php echo esc_html($win_rate); ?>% Win Rate)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Action Launcher Grid -->
+            <div class="evonee-doc-card" style="margin-bottom:24px;">
+                <div class="evonee-card-header" style="padding:14px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0; border-top-left-radius:12px; border-top-right-radius:12px; display:flex; align-items:center; gap:8px;">
+                    <span class="dashicons dashicons-external" style="color:#6d28d9;"></span>
+                    <h2 style="font-size:14px; font-weight:700; color:#1e293b; margin:0;">Quick Launcher & Action Center</h2>
+                </div>
+                <div class="evonee-card-body" style="padding:18px 20px;">
+                    <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:12px;">
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-submissions')); ?>" class="button" style="display:flex; align-items:center; justify-content:center; gap:8px; height:42px; background:#faf5ff; border:1px solid #e9d5ff; color:#6d28d9; font-weight:700; border-radius:8px;">
+                            <span>📥 Submissions</span>
+                        </a>
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-analytics')); ?>" class="button" style="display:flex; align-items:center; justify-content:center; gap:8px; height:42px; background:#eff6ff; border:1px solid #bfdbfe; color:#1d4ed8; font-weight:700; border-radius:8px;">
+                            <span>📊 Analytics</span>
+                        </a>
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-settings')); ?>" class="button" style="display:flex; align-items:center; justify-content:center; gap:8px; height:42px; background:#f0fdf4; border:1px solid #bbf7d0; color:#15803d; font-weight:700; border-radius:8px;">
+                            <span>⚙️ Settings</span>
+                        </a>
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-docs')); ?>" class="button" style="display:flex; align-items:center; justify-content:center; gap:8px; height:42px; background:#fff7ed; border:1px solid #fed7aa; color:#c2410c; font-weight:700; border-radius:8px;">
+                            <span>📖 Docs & Guide</span>
+                        </a>
+                        <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=evonee-submissions&action=export_csv'), 'eq_export_csv_nonce')); ?>" class="button" style="display:flex; align-items:center; justify-content:center; gap:8px; height:42px; background:#f8fafc; border:1px solid #cbd5e1; color:#334155; font-weight:700; border-radius:8px;">
+                            <span>📥 Export CSV</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Two-Column Main Body -->
+            <div style="display:grid; grid-template-columns:2fr 1fr; gap:24px;">
+                <!-- Left Column -->
+                <div>
+                    <!-- Recent Submissions Card -->
+                    <div class="evonee-doc-card" style="margin-bottom:24px;">
+                        <div class="evonee-card-header" style="padding:14px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0; border-top-left-radius:12px; border-top-right-radius:12px; display:flex; justify-content:space-between; align-items:center;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span class="dashicons dashicons-list-view" style="color:#6d28d9;"></span>
+                                <h2 style="font-size:14px; font-weight:700; color:#1e293b; margin:0;">📋 Recent Quote Submissions</h2>
+                            </div>
+                            <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-submissions')); ?>" style="font-size:12px; font-weight:700; color:#6d28d9; text-decoration:none;">View All Submissions &rarr;</a>
+                        </div>
+                        <div class="evonee-card-body" style="padding:0;">
+                            <?php if (!empty($recent_quotes)): ?>
+                                <table class="wp-list-table widefat fixed striped" style="border:none; box-shadow:none;">
+                                    <thead>
+                                        <tr>
+                                            <th style="font-size:11px; text-transform:uppercase; color:#64748b;">ID / Date</th>
+                                            <th style="font-size:11px; text-transform:uppercase; color:#64748b;">Customer</th>
+                                            <th style="font-size:11px; text-transform:uppercase; color:#64748b;">Product</th>
+                                            <th style="font-size:11px; text-transform:uppercase; color:#64748b;">Status</th>
+                                            <th style="font-size:11px; text-transform:uppercase; color:#64748b; text-align:right;">Quoted Price</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($recent_quotes as $q):
+                                            $sc_colors = ['new' => '#16a34a', 'pending' => '#d97706', 'quoted' => '#2563eb', 'approved' => '#7c3aed', 'completed' => '#059669', 'rejected' => '#dc2626'];
+                                            $sc_bg = isset($sc_colors[strtolower($q->status)]) ? $sc_colors[strtolower($q->status)] : '#6b7280';
+                                        ?>
+                                            <tr>
+                                                <td>
+                                                    <strong>#<?php echo esc_html($q->id); ?></strong><br>
+                                                    <small style="color:#94a3b8;"><?php echo esc_html(wp_date('M j, H:i', strtotime($q->created_at))); ?></small>
+                                                </td>
+                                                <td>
+                                                    <strong><?php echo esc_html($q->full_name); ?></strong><br>
+                                                    <small style="color:#64748b;"><?php echo esc_html($q->email); ?></small>
+                                                </td>
+                                                <td>
+                                                    <?php echo esc_html($q->product); ?><br>
+                                                    <small style="color:#64748b;">Qty: <?php echo esc_html($q->quantity); ?></small>
+                                                </td>
+                                                <td>
+                                                    <span style="background:<?php echo esc_attr($sc_bg); ?>; color:#ffffff; border-radius:4px; padding:3px 8px; font-size:10px; font-weight:700; text-transform:uppercase;">
+                                                        <?php echo esc_html($q->status ?: 'new'); ?>
+                                                    </span>
+                                                </td>
+                                                <td style="text-align:right; font-weight:700; color:#0f172a;">
+                                                    <?php echo (!empty($q->quoted_price) && floatval($q->quoted_price) > 0) ? esc_html($curr_sym) . number_format($q->quoted_price, 2) : '<span style="color:#94a3b8; font-weight:normal;">Unquoted</span>'; ?>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            <?php else: ?>
+                                <p style="padding:20px; text-align:center; color:#94a3b8; margin:0;">No quote submissions received yet.</p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <!-- Mini Trend Graph Card -->
+                    <div class="evonee-doc-card">
+                        <div class="evonee-card-header" style="padding:14px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0; border-top-left-radius:12px; border-top-right-radius:12px; display:flex; align-items:center; gap:8px;">
+                            <span class="dashicons dashicons-chart-bar" style="color:#6d28d9;"></span>
+                            <h2 style="font-size:14px; font-weight:700; color:#1e293b; margin:0;">📈 6-Month Lead Growth Trend</h2>
+                        </div>
+                        <div class="evonee-card-body" style="padding:20px;">
+                            <canvas id="dashTrendChart" style="max-height:220px;"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column -->
+                <div>
+                    <!-- System Health Diagnostic Card -->
+                    <div class="evonee-doc-card" style="margin-bottom:24px;">
+                        <div class="evonee-card-header" style="padding:14px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0; border-top-left-radius:12px; border-top-right-radius:12px; display:flex; align-items:center; gap:8px;">
+                            <span class="dashicons dashicons-heart" style="color:#6d28d9;"></span>
+                            <h2 style="font-size:14px; font-weight:700; color:#1e293b; margin:0;">🩺 System Health & Integrations</h2>
+                        </div>
+                        <div class="evonee-card-body" style="padding:16px 20px;">
+                            <ul style="margin:0; padding:0; list-style:none;">
+                                <li style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
+                                    <span>⏱️ <strong>WP-Cron Expiry Automation</strong></span>
+                                    <?php if ($cron_active): ?>
+                                        <span style="background:#dcfce7; color:#15803d; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Active ✓</span>
+                                    <?php else: ?>
+                                        <span style="background:#fee2e2; color:#b91c1c; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Inactive ⚠</span>
+                                    <?php endif; ?>
+                                </li>
+                                <li style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
+                                    <span>🛒 <strong>WooCommerce Engine</strong></span>
+                                    <?php if ($wc_active): ?>
+                                        <span style="background:#dcfce7; color:#15803d; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Connected ✓</span>
+                                    <?php else: ?>
+                                        <span style="background:#f1f5f9; color:#64748b; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Not Installed</span>
+                                    <?php endif; ?>
+                                </li>
+                                <li style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
+                                    <span>🛡️ <strong>reCAPTCHA v3 Protection</strong></span>
+                                    <?php if ($recaptcha_ready): ?>
+                                        <span style="background:#dcfce7; color:#15803d; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Protected ✓</span>
+                                    <?php else: ?>
+                                        <span style="background:#fef3c7; color:#b45309; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Disabled</span>
+                                    <?php endif; ?>
+                                </li>
+                                <li style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
+                                    <span>🔗 <strong>Webhook / Zapier Catch</strong></span>
+                                    <?php if ($webhook_ready): ?>
+                                        <span style="background:#dcfce7; color:#15803d; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Connected ✓</span>
+                                    <?php else: ?>
+                                        <span style="background:#f1f5f9; color:#64748b; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Off</span>
+                                    <?php endif; ?>
+                                </li>
+                                <li style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; font-size:13px;">
+                                    <span>💬 <strong>Slack Lead Channel</strong></span>
+                                    <?php if ($slack_ready): ?>
+                                        <span style="background:#dcfce7; color:#15803d; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Connected ✓</span>
+                                    <?php else: ?>
+                                        <span style="background:#f1f5f9; color:#64748b; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700;">Off</span>
+                                    <?php endif; ?>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Top Requested Products Widget -->
+                    <div class="evonee-doc-card">
+                        <div class="evonee-card-header" style="padding:14px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0; border-top-left-radius:12px; border-top-right-radius:12px; display:flex; align-items:center; gap:8px;">
+                            <span class="dashicons dashicons-star-filled" style="color:#d97706;"></span>
+                            <h2 style="font-size:14px; font-weight:700; color:#1e293b; margin:0;">🔥 Top Demanded Products</h2>
+                        </div>
+                        <div class="evonee-card-body" style="padding:16px 20px;">
+                            <?php if (!empty($top_products)): ?>
+                                <?php foreach ($top_products as $tp):
+                                    $pct = $total_count > 0 ? round(($tp->total / $total_count) * 100) : 0;
+                                ?>
+                                    <div style="margin-bottom:14px;">
+                                        <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">
+                                            <strong><?php echo esc_html($tp->product); ?></strong>
+                                            <span style="color:#64748b; font-weight:600;"><?php echo esc_html($tp->total); ?> quotes (<?php echo esc_html($pct); ?>%)</span>
+                                        </div>
+                                        <div style="background:#f1f5f9; border-radius:10px; height:8px; overflow:hidden;">
+                                            <div style="background:linear-gradient(90deg, #6d28d9 0%, #7c3aed 100%); height:100%; width:<?php echo esc_attr($pct); ?>%; border-radius:10px;"></div>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <p style="color:#94a3b8; font-size:12px; text-align:center; margin:0;">No product data available yet.</p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const trendCtx = document.getElementById('dashTrendChart');
+            if (trendCtx) {
+                const trendLabels = <?php echo json_encode(array_column($monthly_trends, 'month_label') ?: ['Current']); ?>;
+                const trendData   = <?php echo json_encode(array_map('intval', array_column($monthly_trends, 'total')) ?: [$total_count]); ?>;
+
+                new Chart(trendCtx, {
+                    type: 'line',
+                    data: {
+                        labels: trendLabels,
+                        datasets: [{
+                            label: 'Quote Submissions',
+                            data: trendData,
+                            borderColor: '#6d28d9',
+                            backgroundColor: 'rgba(109, 40, 217, 0.08)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.3,
+                            pointBackgroundColor: '#6d28d9',
+                            pointRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+                            x: { grid: { display: false } }
+                        }
+                    }
+                });
+            }
+        });
+        </script>
         <?php
     }
 
@@ -420,7 +821,7 @@ class Evonee_Quote_Admin {
             $delete_id = intval($_GET['id']);
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
             $wpdb->delete($table_name, ['id' => $delete_id], ['%d']);
-            wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=deleted&eq_id=' . $delete_id));
+            wp_safe_redirect(admin_url('admin.php?page=evonee-submissions&eq_notice=deleted&eq_id=' . $delete_id));
             exit;
         }
 
@@ -435,7 +836,7 @@ class Evonee_Quote_Admin {
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
             $wpdb->update($table_name, ['status' => $new_status], ['id' => $sub_id], ['%s'], ['%d']);
             Evonee_Quote_Ajax::log_activity($sub_id, 'status_change', 'Status updated to ' . strtoupper($new_status));
-            wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=status&eq_id=' . $sub_id));
+            wp_safe_redirect(admin_url('admin.php?page=evonee-submissions&eq_notice=status&eq_id=' . $sub_id));
             exit;
         }
 
@@ -493,10 +894,10 @@ class Evonee_Quote_Admin {
                 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
                 $wpdb->update($table_name, ['status' => 'quoted'], ['id' => $sub_id], ['%s'], ['%d']);
                 Evonee_Quote_Ajax::log_activity($sub_id, 'status_change', 'Status updated to QUOTED via Email Reply');
-                wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=email_sent'));
+                wp_safe_redirect(admin_url('admin.php?page=evonee-submissions&eq_notice=email_sent'));
                 exit;
             }
-            wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=email_failed'));
+            wp_safe_redirect(admin_url('admin.php?page=evonee-submissions&eq_notice=email_failed'));
             exit;
         }
 
@@ -510,7 +911,7 @@ class Evonee_Quote_Admin {
                 $placeholders = implode(',', array_fill(0, count($bulk_ids), '%d'));
                 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, PluginCheck.Security.DirectDB.UnescapedDBParameter
                 $wpdb->query($wpdb->prepare("DELETE FROM {$table_name} WHERE id IN ($placeholders)", ...$bulk_ids));
-                wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=bulk_deleted&eq_count=' . count($bulk_ids)));
+                wp_safe_redirect(admin_url('admin.php?page=evonee-submissions&eq_notice=bulk_deleted&eq_count=' . count($bulk_ids)));
                 exit;
             } elseif (!empty($bulk_ids) && in_array($action, ['status_new', 'status_pending', 'status_quoted', 'status_approved', 'status_completed', 'status_rejected'], true)) {
                 $status_val = str_replace('status_', '', $action);
@@ -521,7 +922,7 @@ class Evonee_Quote_Admin {
                 foreach ($bulk_ids as $bid) {
                     Evonee_Quote_Ajax::log_activity($bid, 'status_change', 'Bulk status update to ' . strtoupper($status_val));
                 }
-                wp_safe_redirect(admin_url('admin.php?page=evonee-quotes&eq_notice=bulk_status'));
+                wp_safe_redirect(admin_url('admin.php?page=evonee-submissions&eq_notice=bulk_status'));
                 exit;
             }
         }
@@ -572,7 +973,7 @@ class Evonee_Quote_Admin {
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter
         $results    = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}eq_quote_submissions $where_sql ORDER BY " . sanitize_sql_orderby("$orderby $order") . " LIMIT %d OFFSET %d", $per_page, $offset));
-        $export_url = wp_nonce_url(admin_url('admin.php?page=evonee-quotes&action=export_csv'), 'eq_export_csv_nonce');
+        $export_url = wp_nonce_url(admin_url('admin.php?page=evonee-submissions&action=export_csv'), 'eq_export_csv_nonce');
         ?>
         <div class="wrap evonee-admin-wrap">
             <?php
@@ -608,7 +1009,7 @@ class Evonee_Quote_Admin {
             <!-- Search & Filter Bar -->
             <div class="evonee-filter-bar">
                 <form method="get" class="evonee-filter-form">
-                    <input type="hidden" name="page" value="evonee-quotes">
+                    <input type="hidden" name="page" value="evonee-submissions">
                     
                     <div class="evonee-filter-group">
                         <select name="status_filter" onchange="this.form.submit();">
@@ -635,7 +1036,7 @@ class Evonee_Quote_Admin {
                         </div>
 
                         <?php if (!empty($search) || !empty($status_filter) || !empty($date_range)): ?>
-                            <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-quotes')); ?>" class="button button-link-delete">Reset Filters</a>
+                            <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-submissions')); ?>" class="button button-link-delete">Reset Filters</a>
                         <?php endif; ?>
                     </div>
                 </form>
