@@ -262,6 +262,7 @@ class Evonee_Quote_Ajax {
             self::log_activity($submission_id, 'wc_order_created', 'Converted to WooCommerce Order #' . $order->get_id());
 
             delete_transient('evonee_dashboard_stats');
+            delete_transient('evonee_dashboard_widget_stats');
 
             $order_edit_url = admin_url('post.php?post=' . $order->get_id() . '&action=edit');
             $payment_url    = $order->get_checkout_payment_url();
@@ -854,6 +855,7 @@ class Evonee_Quote_Ajax {
         $submission['id'] = (int) $wpdb->insert_id;
 
         delete_transient('evonee_dashboard_stats');
+        delete_transient('evonee_dashboard_widget_stats');
 
         // Increment rate limit counter only after successful DB insert
         set_transient($transient_key, $submission_count + 1, 15 * MINUTE_IN_SECONDS);
@@ -1436,6 +1438,7 @@ class Evonee_Quote_Ajax {
 
         $submission_id = (int) $wpdb->insert_id;
         delete_transient('evonee_dashboard_stats');
+        delete_transient('evonee_dashboard_widget_stats');
 
         // Send notification emails
         $submission = array_merge((array) $wpdb->get_row($wpdb->prepare(

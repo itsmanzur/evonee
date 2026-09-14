@@ -191,8 +191,8 @@ class Evonee_Quote_Admin {
             return;
         }
 
-        $stats = get_transient('evonee_dashboard_stats');
-        if (false === $stats) {
+        $stats = get_transient('evonee_dashboard_widget_stats');
+        if (false === $stats || !is_array($stats) || !isset($stats['today_count'])) {
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
             $today_count = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions WHERE DATE(created_at) = %s", $today));
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -211,14 +211,14 @@ class Evonee_Quote_Admin {
             ));
 
             $stats = compact('today_count', 'new_count', 'quoted', 'completed', 'total', 'recent');
-            set_transient('evonee_dashboard_stats', $stats, 10 * MINUTE_IN_SECONDS);
+            set_transient('evonee_dashboard_widget_stats', $stats, 10 * MINUTE_IN_SECONDS);
         } else {
-            $today_count = $stats['today_count'];
-            $new_count   = $stats['new_count'];
-            $quoted      = $stats['quoted'];
-            $completed   = $stats['completed'];
-            $total       = $stats['total'];
-            $recent      = $stats['recent'];
+            $today_count = (int) ($stats['today_count'] ?? 0);
+            $new_count   = (int) ($stats['new_count'] ?? 0);
+            $quoted      = (int) ($stats['quoted'] ?? 0);
+            $completed   = (int) ($stats['completed'] ?? 0);
+            $total       = (int) ($stats['total'] ?? 0);
+            $recent      = (array) ($stats['recent'] ?? []);
         }
 
         $status_colors = ['new' => '#16a34a', 'pending' => '#d97706', 'quoted' => '#2563eb', 'approved' => '#7c3aed', 'completed' => '#059669', 'rejected' => '#dc2626'];
@@ -290,7 +290,7 @@ class Evonee_Quote_Admin {
         }
 
         $stats = get_transient('evonee_dashboard_stats');
-        if (false === $stats) {
+        if (false === $stats || !is_array($stats) || !isset($stats['total_count'])) {
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
             $total_count     = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}eq_quote_submissions");
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -343,17 +343,17 @@ class Evonee_Quote_Admin {
             $stats = compact('total_count', 'new_count', 'pending_count', 'quoted_count', 'approved_count', 'completed_count', 'total_pipeline_val', 'urgent_count', 'recent_quotes', 'monthly_trends', 'top_products');
             set_transient('evonee_dashboard_stats', $stats, 10 * MINUTE_IN_SECONDS);
         } else {
-            $total_count        = $stats['total_count'];
-            $new_count          = $stats['new_count'];
-            $pending_count      = $stats['pending_count'];
-            $quoted_count       = $stats['quoted_count'];
-            $approved_count     = $stats['approved_count'];
-            $completed_count    = $stats['completed_count'];
-            $total_pipeline_val = $stats['total_pipeline_val'];
-            $urgent_count       = $stats['urgent_count'];
-            $recent_quotes      = $stats['recent_quotes'];
-            $monthly_trends     = $stats['monthly_trends'];
-            $top_products       = $stats['top_products'];
+            $total_count        = (int) ($stats['total_count'] ?? 0);
+            $new_count          = (int) ($stats['new_count'] ?? 0);
+            $pending_count      = (int) ($stats['pending_count'] ?? 0);
+            $quoted_count       = (int) ($stats['quoted_count'] ?? 0);
+            $approved_count     = (int) ($stats['approved_count'] ?? 0);
+            $completed_count    = (int) ($stats['completed_count'] ?? 0);
+            $total_pipeline_val = (float) ($stats['total_pipeline_val'] ?? 0);
+            $urgent_count       = (int) ($stats['urgent_count'] ?? 0);
+            $recent_quotes      = (array) ($stats['recent_quotes'] ?? []);
+            $monthly_trends     = (array) ($stats['monthly_trends'] ?? []);
+            $top_products       = (array) ($stats['top_products'] ?? []);
         }
 
         $won_deals = $approved_count + $completed_count;
