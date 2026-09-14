@@ -265,6 +265,36 @@ class Evonee_Quote_Ajax {
     }
 
     /**
+     * Daily WP-Cron: Automated Expiry Reminders & Token Cleanup (Phase 4.1)
+     */
+    public static function run_daily_quote_cron() {
+        global $wpdb;
+        $three_days_later = gmdate('Y-m-d H:i:s', strtotime('+3 days'));
+        $now              = gmdate('Y-m-d H:i:s');
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $expiring_quotes = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}eq_quote_submissions WHERE status = %s AND token_expiry IS NOT NULL AND token_expiry > %s AND token_expiry <= %s",
+            'quoted',
+            $now,
+            $three_days_later
+        ));
+
+        if (!empty($expiring_quotes)) {
+            foreach ($expiring_quotes as $q) {
+                Evonee_Quote_Mailer::send_reminder_email($q);
+                self::log_activity($q->id, 'cron_reminder', 'Automated 3-day expiry reminder email sent to customer.');
+            }
+        }
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $wpdb->query($wpdb->prepare(
+            "UPDATE {$wpdb->prefix}eq_quote_submissions SET acceptance_token = '', token_expiry = NULL WHERE token_expiry IS NOT NULL AND token_expiry <= %s",
+            $now
+        ));
+    }
+
+    /**
      * Helper to log activity (Phase 2)
      */
     public static function log_activity($submission_id, $action, $notes = '') {

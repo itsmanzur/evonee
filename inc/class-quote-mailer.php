@@ -30,6 +30,48 @@ class Evonee_Quote_Mailer {
     }
 
     /**
+     * Send automated quote expiration reminder email to customer (Phase 4.1)
+     */
+    public static function send_reminder_email($quote) {
+        if (empty($quote->email) || empty($quote->acceptance_token)) return false;
+
+        $settings = Evonee_Quote_Admin::get_settings();
+        $brand_name = !empty($settings['email_brand_name']) ? $settings['email_brand_name'] : 'Evonee';
+        $accept_url  = add_query_arg(['eq_action' => 'accept_quote', 'token' => $quote->acceptance_token], home_url());
+        $decline_url = add_query_arg(['eq_action' => 'decline_quote', 'token' => $quote->acceptance_token], home_url());
+
+        $subject = '⏰ Reminder: Your Quote for ' . $quote->product . ' is expiring soon!';
+        $headers = [
+            'Content-Type: text/html; charset=UTF-8',
+            'From: ' . $brand_name . ' Sales <' . EQ_SALES_EMAIL . '>',
+            'Reply-To: ' . EQ_SALES_EMAIL
+        ];
+
+        $mail_body = '
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="UTF-8"></head>
+        <body style="font-family:sans-serif; background:#f8fafc; padding:20px;">
+            <div style="max-width:550px; margin:0 auto; background:#ffffff; border-radius:10px; overflow:hidden; border:1px solid #e2e8f0;">
+                <div style="background:#6d28d9; color:#fff; padding:20px; text-align:center;">
+                    <h2 style="margin:0;">⏰ Your Quote Offer is Expiring Soon</h2>
+                </div>
+                <div style="padding:20px;">
+                    <p>Hi <strong>' . esc_html($quote->full_name) . '</strong>,</p>
+                    <p>This is a quick reminder that your negotiated price quote for <strong>' . esc_html($quote->product) . '</strong> will expire in 3 days.</p>
+                    <p style="text-align:center; margin:24px 0;">
+                        <a href="' . esc_url($accept_url) . '" style="background:#16a34a; color:#fff; padding:10px 20px; text-decoration:none; border-radius:6px; font-weight:bold; margin-right:10px;">✅ Accept Offer</a>
+                        <a href="' . esc_url($decline_url) . '" style="background:#dc2626; color:#fff; padding:10px 16px; text-decoration:none; border-radius:6px; font-weight:bold;">❌ Decline Offer</a>
+                    </p>
+                </div>
+            </div>
+        </body>
+        </html>';
+
+        return wp_mail($quote->email, $subject, $mail_body, $headers);
+    }
+
+    /**
      * Send structured HTML email notification to sales/admin team
      */
     private static function send_admin_notification(array $submission) {
