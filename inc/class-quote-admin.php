@@ -1533,16 +1533,40 @@ class Evonee_Quote_Admin {
                                 </tbody>
                             </table>
 
-                            <h3>Examples:</h3>
-                            <div class="evonee-code-snippet">
-                                <code>[evonee_products cols="6" cols_tablet="3" cols_mobile="2"]</code>
-                                <button type="button" class="evonee-copy-code" data-code='[evonee_products cols="6" cols_tablet="3" cols_mobile="2"]'>Copy</button>
+                            <h3>Available Shortcodes:</h3>
+
+                            <div style="margin-bottom:14px;">
+                                <strong>1. Products Grid Shortcode:</strong>
+                                <div class="evonee-code-snippet">
+                                    <code>[evonee_products cols="6" cols_tablet="3" cols_mobile="2"]</code>
+                                    <button type="button" class="evonee-copy-code" data-code='[evonee_products cols="6" cols_tablet="3" cols_mobile="2"]'>Copy</button>
+                                </div>
                             </div>
-                            <div class="evonee-code-snippet">
-                                <code>[evonee_quote_button product="Silicone Wristband" text="Get Free Quote"]</code>
-                                <button type="button" class="evonee-copy-code" data-code='[evonee_quote_button product="Silicone Wristband" text="Get Free Quote"]'>Copy</button>
+
+                            <div style="margin-bottom:14px;">
+                                <strong>2. Quote Trigger Button Shortcode:</strong>
+                                <div class="evonee-code-snippet">
+                                    <code>[evonee_quote_button product="Silicone Wristband" text="Get Free Quote"]</code>
+                                    <button type="button" class="evonee-copy-code" data-code='[evonee_quote_button product="Silicone Wristband" text="Get Free Quote"]'>Copy</button>
+                                </div>
                             </div>
-                        </div>
+
+                            <div style="margin-bottom:14px;">
+                                <strong>3. Front-end Customer Quote Portal Shortcode (Phase 3):</strong>
+                                <div class="evonee-code-snippet">
+                                    <code>[evonee_customer_portal]</code>
+                                    <button type="button" class="evonee-copy-code" data-code='[evonee_customer_portal]'>Copy</button>
+                                </div>
+                                <p class="description">Renders a front-end portal where buyers can view their quote history, track real-time statuses, view price offers, and 1-click accept or decline offers.</p>
+                            </div>
+
+                            <h3>Native Page Builders & WooCommerce Integration:</h3>
+                            <ul style="line-height:1.6; color:#475569; padding-left:20px;">
+                                <li><strong>Elementor Native Widget:</strong> Search for <code>Evonee Quote Button</code> under Elementor's <em>General</em> widget category.</li>
+                                <li><strong>Gutenberg Block:</strong> Search for <code>evonee/quote-button</code> block in WordPress block editor or Full Site Editing (FSE).</li>
+                                <li><strong>1-Click WooCommerce Order Conversion:</strong> In <code>Evonee Quotes ➔ Submissions</code>, open any quote drawer and click <code>🛒 Convert to WC Order</code> to generate a WooCommerce pending order.</li>
+                                <li><strong>Bulk Cart Quote Request:</strong> Enable <code>Bulk Cart Quote Request</code> in Settings to add a B2B quote request button on WooCommerce Cart & Checkout pages.</li>
+                            </ul>
                     </div>
 
                     <!-- Section 4: Webhook & Slack Integrations -->
