@@ -677,17 +677,31 @@ class Evonee_Quote_Ajax {
 
         // Dynamically capture No-Code custom fields
         $custom_builder_fields = get_option('evonee_quote_custom_fields', []);
+        $errors = [];
         if (!empty($custom_builder_fields) && is_array($custom_builder_fields)) {
             foreach ($custom_builder_fields as $cf) {
                 $f_key = 'custom_field_' . sanitize_title($cf['label']);
-                if (isset($_POST[$f_key])) {
-                    $product_details[$cf['label']] = sanitize_text_field(wp_unslash($_POST[$f_key]));
+                $f_type = $cf['type'] ?? 'text';
+                $val = '';
+                if ($f_type === 'textarea') {
+                    $val = isset($_POST[$f_key]) ? sanitize_textarea_field(wp_unslash($_POST[$f_key])) : '';
+                } elseif ($f_type === 'checkbox') {
+                    $val = !empty($_POST[$f_key]) ? 'Yes' : '';
+                } else {
+                    $val = isset($_POST[$f_key]) ? sanitize_text_field(wp_unslash($_POST[$f_key])) : '';
+                }
+
+                if (!empty($cf['required']) && $val === '') {
+                    $errors[$f_key] = sprintf('%s is required.', $cf['label']);
+                }
+
+                if ($val !== '') {
+                    $product_details[$cf['label']] = $val;
                 }
             }
         }
 
         // 6. Server-Side Validation
-        $errors = [];
         if (empty($full_name)) {
             $errors['full_name'] = 'Full Name is required.';
         }

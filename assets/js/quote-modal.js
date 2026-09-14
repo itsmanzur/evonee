@@ -177,11 +177,33 @@ document.addEventListener('DOMContentLoaded', function () {
     const unitPriceEl = document.getElementById('eq-unit-price');
     const totalPriceEl = document.getElementById('eq-total-price');
 
+    function formatCurrency(amount) {
+        const data = (typeof eqQuoteData !== 'undefined') ? eqQuoteData : {};
+        const symbol = data.currencySymbol || '$';
+        const pos = data.currencyPos || 'left';
+        const decimals = (typeof data.decimals !== 'undefined') ? parseInt(data.decimals) : 2;
+        const decSep = data.decimalSep || '.';
+        const thousandSep = data.thousandSep || ',';
+
+        const parts = Number(amount).toFixed(decimals).split('.');
+        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, thousandSep);
+        const formattedNum = parts.join(decSep);
+
+        switch (pos) {
+            case 'right':
+                return formattedNum + symbol;
+            case 'left_space':
+                return symbol + ' ' + formattedNum;
+            case 'right_space':
+                return formattedNum + ' ' + symbol;
+            case 'left':
+            default:
+                return symbol + formattedNum;
+        }
+    }
+
     function updateLiveEstimate() {
         if (!unitPriceEl || !totalPriceEl) return;
-
-        const calcCard = document.getElementById('eq-calc-card');
-        const currencySym = (calcCard && calcCard.getAttribute('data-currency')) ? calcCard.getAttribute('data-currency') : '$';
 
         let numQty = 100;
         if (qtySelect && qtySelect.value) {
@@ -202,9 +224,9 @@ document.addEventListener('DOMContentLoaded', function () {
         else if (numQty < 5000) unitPrice = 0.22;
         else unitPrice = 0.18;
 
-        const total = (numQty * unitPrice).toFixed(2);
-        unitPriceEl.textContent = currencySym + unitPrice.toFixed(2) + ' / pc';
-        totalPriceEl.textContent = currencySym + Number(total).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const total = numQty * unitPrice;
+        unitPriceEl.textContent = formatCurrency(unitPrice) + ' / pc';
+        totalPriceEl.textContent = formatCurrency(total);
     }
 
     if (qtySelect) {

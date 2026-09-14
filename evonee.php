@@ -290,6 +290,49 @@ add_action('template_redirect', function() {
         $note = ($action === 'accept_quote') ? 'Customer SIGNED & ACCEPTED quote offer via public link' : 'Customer DECLINED quote offer via public link';
         Evonee_Quote_Ajax::log_activity($quote->id, 'customer_response', $note);
 
+        $payment_url = '';
+        if ($action === 'accept_quote' && class_exists('WooCommerce') && function_exists('wc_create_order') && floatval($quote->quoted_price) > 0) {
+            try {
+                $order = wc_create_order();
+                $item = new WC_Order_Item_Fee();
+                $item_name = !empty($quote->product) ? $quote->product : 'Custom Quote Package';
+                if (!empty($quote->quantity)) {
+                    $item_name .= ' (Qty: ' . $quote->quantity . ')';
+                }
+                $item->set_name($item_name);
+                $item->set_total(floatval($quote->quoted_price));
+                $order->add_item($item);
+
+                $name_parts = explode(' ', trim($quote->full_name), 2);
+                $first_name = $name_parts[0];
+                $last_name  = isset($name_parts[1]) ? $name_parts[1] : '';
+
+                $address = [
+                    'first_name' => $first_name,
+                    'last_name'  => $last_name,
+                    'company'    => $quote->company,
+                    'email'      => $quote->email,
+                    'phone'      => $quote->phone,
+                    'country'    => $quote->country,
+                    'postcode'   => $quote->zip_code,
+                ];
+                $order->set_address($address, 'billing');
+
+                if (!empty($quote->project_notes)) {
+                    $order->set_customer_note($quote->project_notes);
+                }
+
+                $order->calculate_totals();
+                $order->update_status('pending', 'Auto-created upon Customer acceptance of Quote Request #' . $quote->id);
+                $order->save();
+
+                $payment_url = $order->get_checkout_payment_url();
+                Evonee_Quote_Ajax::log_activity($quote->id, 'wc_order_created', 'Auto-created WooCommerce Order #' . $order->get_id() . ' for customer checkout');
+            } catch (\Exception $e) {
+                error_log('Evonee WooCommerce order creation error: ' . $e->getMessage());
+            }
+        }
+
         ?>
         <!DOCTYPE html>
         <html>
@@ -297,24 +340,41 @@ add_action('template_redirect', function() {
             <meta charset="UTF-8">
             <title>Quote Response — Evonee</title>
             <style>
-                body { font-family: 'Segoe UI', Arial, sans-serif; background: #f8fafc; color: #1e1b2e; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-                .card { background: #ffffff; padding: 40px; border-radius: 12px; border: 1px solid #e2e8f0; max-width: 500px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+                body { font-family: 'Segoe UI', Arial, sans-serif; background: #f8fafc; color: #1e1b2e; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+                .card { background: #ffffff; padding: 40px; border-radius: 12px; border: 1px solid #e2e8f0; max-width: 500px; width: 100%; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
                 h1 { color: <?php echo esc_attr($action === 'accept_quote' ? '#16a34a' : '#dc2626'); ?>; font-size: 24px; margin-top: 0; }
                 p { color: #64748b; font-size: 15px; line-height: 1.6; }
-                .btn { display: inline-block; margin-top: 20px; background: #6d28d9; color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-weight: 700; }
+                .btn { display: inline-block; margin-top: 15px; background: #6d28d9; color: #fff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 700; font-size: 15px; }
+                .btn-secondary { display: inline-block; margin-top: 10px; background: transparent; color: #64748b; text-decoration: none; padding: 8px 16px; font-size: 13px; font-weight: 600; }
+                .btn-pay { background: #16a34a; color: #fff; font-size: 16px; display: block; margin: 20px 0 10px 0; padding: 14px 20px; }
             </style>
         </head>
         <body>
             <div class="card">
                 <h1><?php echo $action === 'accept_quote' ? '🎉 Quote Offer Signed & Accepted!' : 'Offer Response Received'; ?></h1>
-                <p><?php echo $action === 'accept_quote' ? 'Thank you for signing and approving your quote request for <strong>' . esc_html($quote->product) . '</strong>. Our team will contact you shortly to begin production.' : 'Thank you for letting us know. We have updated your quote request status.'; ?></p>
+                <p><?php echo $action === 'accept_quote' ? 'Thank you for signing and approving your quote request for <strong>' . esc_html($quote->product) . '</strong>.' : 'Thank you for letting us know. We have updated your quote request status.'; ?></p>
+                
+                <?php if (!empty($payment_url)): ?>
+                    <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:16px; margin:20px 0;">
+                        <span style="font-size:13px; font-weight:700; color:#15803d; text-transform:uppercase; letter-spacing:0.5px; display:block;">Total Quoted Amount</span>
+                        <div style="font-size:28px; font-weight:800; color:#166534; margin:4px 0 12px 0;">
+                            <?php echo esc_html(Evonee_Quote_Admin::format_price($quote->quoted_price)); ?>
+                        </div>
+                        <a href="<?php echo esc_url($payment_url); ?>" class="btn btn-pay">💳 Proceed to Payment & Checkout &rarr;</a>
+                        <small style="color:#15803d; font-size:12px;">Instant secure payment via WooCommerce</small>
+                    </div>
+                <?php endif; ?>
+
                 <?php if (!empty($sig_data)): ?>
                     <div style="margin-top:16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px;">
                         <small style="color:#64748b; font-weight:700; display:block;">Your Recorded Signature:</small>
                         <img src="<?php echo esc_url($sig_data); ?>" style="max-height:70px; margin-top:6px;">
                     </div>
                 <?php endif; ?>
-                <a href="<?php echo esc_url(home_url()); ?>" class="btn">Return to Homepage</a>
+
+                <div>
+                    <a href="<?php echo esc_url(home_url()); ?>" class="btn-secondary">Return to Homepage</a>
+                </div>
             </div>
         </body>
         </html>

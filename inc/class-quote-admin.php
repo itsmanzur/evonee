@@ -89,6 +89,12 @@ class Evonee_Quote_Admin {
         $defaults = [
             'sales_email'              => 'sales@evonee.com',
             'currency_symbol'          => '$',
+            'currency_code'            => 'USD',
+            'currency_pos'             => 'left',
+            'decimal_separator'        => '.',
+            'thousand_separator'       => ',',
+            'decimals'                 => '2',
+            'delete_data_on_uninstall' => '0',
             'enable_price_calc'        => '1',
             'enable_pdf_quote'         => '1',
             'enable_analytics'         => '1',
@@ -128,6 +134,34 @@ class Evonee_Quote_Admin {
 
         $saved = get_option('evonee_quote_settings', []);
         return wp_parse_args($saved, $defaults);
+    }
+
+    /**
+     * Centralized price formatter with multi-currency & locale support
+     */
+    public static function format_price($amount, $settings = null) {
+        if ($settings === null) {
+            $settings = self::get_settings();
+        }
+        $symbol   = !empty($settings['currency_symbol']) ? $settings['currency_symbol'] : '$';
+        $pos      = !empty($settings['currency_pos']) ? $settings['currency_pos'] : 'left';
+        $decimals = isset($settings['decimals']) ? intval($settings['decimals']) : 2;
+        $dec_sep  = isset($settings['decimal_separator']) ? $settings['decimal_separator'] : '.';
+        $th_sep   = isset($settings['thousand_separator']) ? $settings['thousand_separator'] : ',';
+
+        $formatted_number = number_format(floatval($amount), $decimals, $dec_sep, $th_sep);
+
+        switch ($pos) {
+            case 'right':
+                return $formatted_number . $symbol;
+            case 'left_space':
+                return $symbol . ' ' . $formatted_number;
+            case 'right_space':
+                return $formatted_number . ' ' . $symbol;
+            case 'left':
+            default:
+                return $symbol . $formatted_number;
+        }
     }
 
     /**
@@ -1931,9 +1965,9 @@ class Evonee_Quote_Admin {
                                         <td><code>Evonee Quotes ➔ Settings</code> & ➔ <code>Email Log</code></td>
                                     </tr>
                                     <tr>
-                                        <td><span class="evonee-module-badge">💰 Module 3 — Pricing</span></td>
-                                        <td>Quoted Price Entry in CRM, 1-Click Printable PDF Quote Sheet, Tokenized Customer Accept/Decline Email Buttons.</td>
-                                        <td><code>Submissions ➔ View Detail</code></td>
+                                        <td><span class="evonee-module-badge">🌍 Module 3 — Multi-Currency & Pricing</span></td>
+                                        <td>Global Currency Symbols ($, €, £, ¥, ৳, AED), ISO 4217 Currency Codes, 4 Position formats, Decimal/Thousand Separator controls, and Volume Tier Breaks.</td>
+                                        <td><code>Evonee Quotes ➔ Settings ➔ Section 4</code></td>
                                     </tr>
                                     <tr>
                                         <td><span class="evonee-module-badge">📊 Module 4 — Analytics</span></td>
@@ -1941,29 +1975,29 @@ class Evonee_Quote_Admin {
                                         <td><code>Evonee Quotes ➔ Analytics & Reports</code></td>
                                     </tr>
                                     <tr>
-                                        <td><span class="evonee-module-badge">🛒 Module 5 — WooCommerce</span></td>
-                                        <td>1-Click Quote to Order Conversion, Conditional Quote Rules (Out of Stock, Guest Users), Price Hiding, and Bulk Cart Quote Request.</td>
+                                        <td><span class="evonee-module-badge">🛒 Module 5 — WooCommerce & Direct Pay</span></td>
+                                        <td>1-Click Quote to Order Conversion, Instant Payment & Checkout button upon Customer Signature Acceptance, Conditional Quote Rules, and Bulk Cart Quote.</td>
                                         <td><code>Evonee Quotes ➔ Settings</code> & ➔ <code>Submissions</code></td>
                                     </tr>
                                     <tr>
-                                        <td><span class="evonee-module-badge">🔗 Module 6 — Integrations</span></td>
+                                        <td><span class="evonee-module-badge">🎨 Module 6 — Visual Field Builder</span></td>
+                                        <td>7 dynamic No-Code field types: Text, Dropdown Select, Radio Buttons, Single Checkbox, HTML5 Date Picker, Number, and Textarea with live modal rendering & server validation.</td>
+                                        <td><code>Evonee Quotes ➔ Settings ➔ Section 3</code></td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="evonee-module-badge">🔗 Module 7 — Integrations</span></td>
                                         <td>Webhook URL endpoint (Zapier, Make, HubSpot), Native Elementor Widget, Gutenberg Block, and Slack Channel Lead Notifications.</td>
                                         <td><code>Evonee Quotes ➔ Settings</code></td>
                                     </tr>
                                     <tr>
-                                        <td><span class="evonee-module-badge">🛡️ Module 7 — Security & UX</span></td>
-                                        <td>Google reCAPTCHA v3, Multi-file Upload (up to 3 files), LocalStorage Form Draft Auto-Resume.</td>
+                                        <td><span class="evonee-module-badge">🛡️ Module 8 — Security & UX</span></td>
+                                        <td>Nonce verification on all AJAX/Chat endpoints, XSS-safe E-Signature canvas, Google reCAPTCHA v3, Multi-file Upload, LocalStorage Form Draft Auto-Resume.</td>
                                         <td><code>Evonee Quotes ➔ Settings</code></td>
                                     </tr>
                                     <tr>
-                                        <td><span class="evonee-module-badge">🎨 Module 8 — UI/UX</span></td>
-                                        <td>Multi-step Gradient Progress Bar, Social Proof Badge ("⚡ X quotes today"), Floating WhatsApp Button, Branded PDF Logo.</td>
-                                        <td>Modal & PDF Sheet Header</td>
-                                    </tr>
-                                    <tr>
-                                        <td><span class="evonee-module-badge">⏰ Module 9 — Automations</span></td>
-                                        <td>Daily WP-Cron background task for automated 3-day expiry reminder emails and expired token cleanup.</td>
-                                        <td>Automated System Background Cron</td>
+                                        <td><span class="evonee-module-badge">⏰ Module 9 — Automations & Cleanup</span></td>
+                                        <td>Daily WP-Cron background task for automated 3-day expiry reminders, weekly digest, and standard WordPress <code>uninstall.php</code> data cleanup option.</td>
+                                        <td><code>Evonee Quotes ➔ Settings</code> & Background Cron</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -2092,11 +2126,95 @@ class Evonee_Quote_Admin {
                             </ul>
                     </div>
 
-                    <!-- Section 4: REST API, Webhook & Slack Integrations -->
+                    <!-- Section 4: Visual Custom Field Builder Guide -->
+                    <div class="evonee-doc-card">
+                        <div class="evonee-card-header">
+                            <div class="dashicons-badge"><span class="dashicons dashicons-plus-alt2"></span></div>
+                            <h2>4. 🎨 Visual Custom Field Builder Guide</h2>
+                        </div>
+                        <div class="evonee-card-body">
+                            <p>You can dynamically add unlimited custom fields to your Get Quote popup modal without writing code. Navigate to <code>Evonee Quotes ➔ Settings ➔ Section 3</code>.</p>
+                            
+                            <table class="evonee-docs-table">
+                                <thead>
+                                    <tr>
+                                        <th>Field Type</th>
+                                        <th>How to Configure</th>
+                                        <th>Frontend Display</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>Text Input</strong></td>
+                                        <td>Provide label (e.g. <em>Event Name</em>)</td>
+                                        <td>Standard single-line text input.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Dropdown Select</strong></td>
+                                        <td>Comma-separated options (e.g. <em>Red, Blue, Green</em>)</td>
+                                        <td>Modern styled select dropdown.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Radio Buttons</strong></td>
+                                        <td>Comma-separated options (e.g. <em>Standard, Express, Overnight</em>)</td>
+                                        <td>Clean horizontal radio group with instant toggle.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Single Checkbox</strong></td>
+                                        <td>Label (e.g. <em>Include Sample Pack</em>)</td>
+                                        <td>Stylish toggle checkbox. Saves as 'Yes' when checked.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>HTML5 Date Picker</strong></td>
+                                        <td>Label (e.g. <em>Event / Target Deadline Date</em>)</td>
+                                        <td>Native calendar date picker with YYYY-MM-DD format.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Number</strong></td>
+                                        <td>Label (e.g. <em>Budget Range / Est. Guests</em>)</td>
+                                        <td>Numeric input field.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Textarea</strong></td>
+                                        <td>Label (e.g. <em>Special Artwork / Engraving Specs</em>)</td>
+                                        <td>Multi-line expandable textarea.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <p class="description" style="margin-top:10px;">All custom field inputs are automatically validated on submission, saved with the lead record, displayed in the CRM Detail drawer, and included in PDF quote sheets.</p>
+                        </div>
+                    </div>
+
+                    <!-- Section 5: WooCommerce Direct Payment & Multi-Currency -->
+                    <div class="evonee-doc-card">
+                        <div class="evonee-card-header">
+                            <div class="dashicons-badge"><span class="dashicons dashicons-money-alt"></span></div>
+                            <h2>5. 💳 WooCommerce Direct Pay & Multi-Currency Setup</h2>
+                        </div>
+                        <div class="evonee-card-body">
+                            <h3>🛒 Instant Payment on Quote Acceptance:</h3>
+                            <p>When you send a quote offer to a customer, they receive a secure acceptance link. Upon signing with their digital signature:</p>
+                            <ul>
+                                <li>If WooCommerce is installed and the quote has an approved price, an official WooCommerce Pending Order is automatically created with custom line items.</li>
+                                <li>The customer is immediately presented with a prominent <strong>"Proceed to Payment & Checkout"</strong> button that takes them directly to the WooCommerce payment gateway (Stripe, PayPal, Authorize.net, etc.) to complete payment.</li>
+                            </ul>
+
+                            <h3 style="margin-top:16px;">🌍 Multi-Currency & Locale Controls:</h3>
+                            <p>In <code>Evonee Quotes ➔ Settings ➔ Section 4</code>, you can configure your store's international financial display:</p>
+                            <ul>
+                                <li><strong>Currency Symbol:</strong> Any global symbol such as <code>$</code>, <code>€</code>, <code>£</code>, <code>¥</code>, <code>৳</code>, <code>AED</code>, <code>₹</code>.</li>
+                                <li><strong>Currency Code (ISO 4217):</strong> e.g. <code>USD</code>, <code>EUR</code>, <code>GBP</code>, <code>BDT</code>, <code>CAD</code>.</li>
+                                <li><strong>Currency Position:</strong> Left (<code>$99.00</code>), Right (<code>99.00$</code>), Left with Space (<code>$ 99.00</code>), Right with Space (<code>99.00 $</code>).</li>
+                                <li><strong>Separators & Decimals:</strong> Customize decimal separator (<code>.</code> or <code>,</code>), thousand separator (<code>,</code> or <code>.</code> or space), and precision (0 to 4 decimals).</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Section 6: REST API, Webhook & Slack Integrations -->
                     <div class="evonee-doc-card">
                         <div class="evonee-card-header">
                             <div class="dashicons-badge"><span class="dashicons dashicons-share-alt"></span></div>
-                            <h2>4. REST API, Webhook, Zapier & Slack Configuration</h2>
+                            <h2>6. REST API, Webhook, Zapier & Slack Configuration</h2>
                         </div>
                         <div class="evonee-card-body">
                             <p><strong>Custom WP REST API Endpoints:</strong></p>
@@ -2488,6 +2606,12 @@ class Evonee_Quote_Admin {
             $new_settings = [
                 'sales_email'              => sanitize_email(wp_unslash($_POST['sales_email'] ?? '')),
                 'currency_symbol'          => sanitize_text_field(wp_unslash($_POST['currency_symbol'] ?? '$')),
+                'currency_code'            => sanitize_text_field(wp_unslash($_POST['currency_code'] ?? 'USD')),
+                'currency_pos'             => sanitize_text_field(wp_unslash($_POST['currency_pos'] ?? 'left')),
+                'decimal_separator'        => sanitize_text_field(wp_unslash($_POST['decimal_separator'] ?? '.')),
+                'thousand_separator'       => sanitize_text_field(wp_unslash($_POST['thousand_separator'] ?? ',')),
+                'decimals'                 => min(4, max(0, intval($_POST['decimals'] ?? 2))),
+                'delete_data_on_uninstall' => isset($_POST['delete_data_on_uninstall']) ? '1' : '0',
                 'enable_price_calc'        => isset($_POST['enable_price_calc']) ? '1' : '0',
                 'enable_pdf_quote'         => isset($_POST['enable_pdf_quote']) ? '1' : '0',
                 'enable_analytics'         => isset($_POST['enable_analytics']) ? '1' : '0',
@@ -2780,7 +2904,10 @@ class Evonee_Quote_Admin {
                                                 <select name="custom_fields[<?php echo esc_attr($index); ?>][type]" class="widefat">
                                                     <option value="text" <?php selected($field['type'], 'text'); ?>>Text Input</option>
                                                     <option value="select" <?php selected($field['type'], 'select'); ?>>Dropdown Select</option>
+                                                    <option value="radio" <?php selected($field['type'], 'radio'); ?>>Radio Buttons</option>
+                                                    <option value="checkbox" <?php selected($field['type'], 'checkbox'); ?>>Single Checkbox</option>
                                                     <option value="number" <?php selected($field['type'], 'number'); ?>>Number</option>
+                                                    <option value="date" <?php selected($field['type'], 'date'); ?>>Date Picker</option>
                                                     <option value="textarea" <?php selected($field['type'], 'textarea'); ?>>Textarea</option>
                                                 </select>
                                             </div>
@@ -2808,8 +2935,8 @@ class Evonee_Quote_Admin {
                         <!-- General Configuration Card -->
                         <div class="evonee-doc-card" style="margin-top: 20px;">
                             <div class="evonee-card-header">
-                                <span class="dashicons dashicons-email-alt"></span>
-                                <h2>4. General Email & Pricing Configuration</h2>
+                                <span class="dashicons dashicons-money-alt"></span>
+                                <h2>4. Currency & Pricing Localization</h2>
                             </div>
                             <div class="evonee-card-body">
                                 
@@ -2819,16 +2946,50 @@ class Evonee_Quote_Admin {
                                     <p class="description">All incoming customer quote request notifications will be sent to this email address.</p>
                                 </div>
 
-                                <div style="margin-bottom: 16px;">
-                                    <label style="font-weight:700; display:block; margin-bottom:6px;">Currency Symbol:</label>
-                                    <input type="text" name="currency_symbol" value="<?php echo esc_attr($settings['currency_symbol']); ?>" style="width:80px;" required>
-                                    <p class="description">Currency symbol used for live price calculation estimates (e.g. $, €, £, ৳, AED).</p>
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Currency Symbol:</label>
+                                        <input type="text" name="currency_symbol" value="<?php echo esc_attr($settings['currency_symbol'] ?? '$'); ?>" class="regular-text" placeholder="$" required>
+                                        <p class="description">Symbol displayed in UI & PDFs (e.g. $, €, £, ¥, ৳, AED, ₹, kr).</p>
+                                    </div>
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Currency Code (ISO 4217):</label>
+                                        <input type="text" name="currency_code" value="<?php echo esc_attr($settings['currency_code'] ?? 'USD'); ?>" class="regular-text" placeholder="USD" maxlength="4">
+                                        <p class="description">Three-letter ISO currency code (e.g. USD, EUR, GBP, AUD, CAD).</p>
+                                    </div>
                                 </div>
 
-                                <div style="margin-bottom: 16px;">
-                                    <label style="font-weight:700; display:block; margin-bottom:6px;">Product Grid — Items to Display:</label>
-                                    <input type="number" name="products_grid_limit" value="<?php echo esc_attr($settings['products_grid_limit']); ?>" min="0" max="100" style="width:80px;" required>
-                                    <p class="description">How many products to show in the <code>[evonee_products]</code> grid. Use <code>0</code> to show all. Shortcode <code>limit</code> attribute overrides this.</p>
+                                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:16px;">
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Currency Position:</label>
+                                        <select name="currency_pos" class="widefat">
+                                            <option value="left" <?php selected($settings['currency_pos'] ?? 'left', 'left'); ?>>Left ($99.00)</option>
+                                            <option value="right" <?php selected($settings['currency_pos'] ?? 'left', 'right'); ?>>Right (99.00$)</option>
+                                            <option value="left_space" <?php selected($settings['currency_pos'] ?? 'left', 'left_space'); ?>>Left with space ($ 99.00)</option>
+                                            <option value="right_space" <?php selected($settings['currency_pos'] ?? 'left', 'right_space'); ?>>Right with space (99.00 $)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Decimal Separator:</label>
+                                        <input type="text" name="decimal_separator" value="<?php echo esc_attr($settings['decimal_separator'] ?? '.'); ?>" style="width:60px;">
+                                    </div>
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Thousand Separator:</label>
+                                        <input type="text" name="thousand_separator" value="<?php echo esc_attr($settings['thousand_separator'] ?? ','); ?>" style="width:60px;">
+                                    </div>
+                                </div>
+
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Number of Decimals:</label>
+                                        <input type="number" name="decimals" value="<?php echo esc_attr($settings['decimals'] ?? 2); ?>" min="0" max="4" style="width:70px;">
+                                        <p class="description">Set to 0 for currencies without cents/decimals (e.g. JPY, KRW).</p>
+                                    </div>
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Product Grid — Items to Display:</label>
+                                        <input type="number" name="products_grid_limit" value="<?php echo esc_attr($settings['products_grid_limit']); ?>" min="0" max="100" style="width:80px;" required>
+                                        <p class="description">How many products to show in <code>[evonee_products]</code>.</p>
+                                    </div>
                                 </div>
 
                                 <div class="evonee-setting-row" style="border-bottom:none; padding-bottom:0;">
@@ -2838,6 +2999,17 @@ class Evonee_Quote_Admin {
                                     </div>
                                     <label class="evonee-toggle">
                                         <input type="checkbox" name="show_products_title" value="1" <?php checked($settings['show_products_title'], '1'); ?>>
+                                        <span class="evonee-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div class="evonee-setting-row" style="border-top:1px solid #e2e8f0; margin-top:12px; padding-top:12px; border-bottom:none; padding-bottom:0;">
+                                    <div class="evonee-setting-info">
+                                        <strong>Data Cleanup on Uninstallation</strong>
+                                        <p style="color:#ef4444;">Erase all plugin database tables, logs, and settings when deleted from WordPress Plugins list.</p>
+                                    </div>
+                                    <label class="evonee-toggle">
+                                        <input type="checkbox" name="delete_data_on_uninstall" value="1" <?php checked($settings['delete_data_on_uninstall'] ?? '0', '1'); ?>>
                                         <span class="evonee-slider"></span>
                                     </label>
                                 </div>
@@ -3084,7 +3256,10 @@ class Evonee_Quote_Admin {
                                 <select name="custom_fields[${index}][type]" class="widefat">
                                     <option value="text">Text Input</option>
                                     <option value="select">Dropdown Select</option>
+                                    <option value="radio">Radio Buttons</option>
+                                    <option value="checkbox">Single Checkbox</option>
                                     <option value="number">Number</option>
+                                    <option value="date">Date Picker</option>
                                     <option value="textarea">Textarea</option>
                                 </select>
                             </div>

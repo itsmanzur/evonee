@@ -220,6 +220,12 @@ class Evonee_Quote_Modal {
             'messageNonce'     => wp_create_nonce('eq_message_nonce'),
             'recaptchaSiteKey' => $recaptcha_site_key,
             'placeholder'      => self::get_svg_placeholder(),
+            'currencySymbol'   => !empty($settings['currency_symbol']) ? $settings['currency_symbol'] : '$',
+            'currencyCode'     => !empty($settings['currency_code']) ? $settings['currency_code'] : 'USD',
+            'currencyPos'      => !empty($settings['currency_pos']) ? $settings['currency_pos'] : 'left',
+            'decimalSep'       => $settings['decimal_separator'] ?? '.',
+            'thousandSep'      => $settings['thousand_separator'] ?? ',',
+            'decimals'         => isset($settings['decimals']) ? intval($settings['decimals']) : 2,
         ]);
     }
 
@@ -862,22 +868,44 @@ class Evonee_Quote_Modal {
                                         $star = $is_req ? ' <span class="eq-req">*</span>' : '';
                                 ?>
                                         <div class="eq-field">
-                                            <label for="<?php echo esc_attr($f_name); ?>"><?php echo esc_html($cf['label']); ?><?php echo wp_kses_post($star); ?></label>
-                                            <?php if ($cf['type'] === 'select'): 
-                                                $opts = array_map('trim', explode(',', $cf['options']));
-                                            ?>
-                                                <select id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" <?php echo esc_attr($req_attr); ?>>
-                                                    <option value="" disabled selected>Select <?php echo esc_html($cf['label']); ?></option>
-                                                    <?php foreach ($opts as $opt): ?>
-                                                        <option value="<?php echo esc_attr($opt); ?>"><?php echo esc_html($opt); ?></option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                            <?php elseif ($cf['type'] === 'textarea'): ?>
-                                                <textarea id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" rows="2" placeholder="Enter <?php echo esc_attr($cf['label']); ?>" <?php echo esc_attr($req_attr); ?>></textarea>
-                                            <?php elseif ($cf['type'] === 'number'): ?>
-                                                <input type="number" id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" placeholder="Enter <?php echo esc_attr($cf['label']); ?>" <?php echo esc_attr($req_attr); ?>>
+                                            <?php if ($cf['type'] === 'checkbox'): ?>
+                                                <div class="eq-checkbox-wrap" style="margin-top:6px;">
+                                                    <label class="eq-checkbox">
+                                                        <input type="checkbox" id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" value="1" <?php echo esc_attr($req_attr); ?>>
+                                                        <span><?php echo esc_html($cf['label']); ?><?php echo wp_kses_post($star); ?></span>
+                                                    </label>
+                                                </div>
                                             <?php else: ?>
-                                                <input type="text" id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" placeholder="Enter <?php echo esc_attr($cf['label']); ?>" <?php echo esc_attr($req_attr); ?>>
+                                                <label for="<?php echo esc_attr($f_name); ?>"><?php echo esc_html($cf['label']); ?><?php echo wp_kses_post($star); ?></label>
+                                                <?php if ($cf['type'] === 'select'): 
+                                                    $opts = array_map('trim', explode(',', $cf['options'] ?? ''));
+                                                ?>
+                                                    <select id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" <?php echo esc_attr($req_attr); ?>>
+                                                        <option value="" disabled selected>Select <?php echo esc_html($cf['label']); ?></option>
+                                                        <?php foreach ($opts as $opt): ?>
+                                                            <option value="<?php echo esc_attr($opt); ?>"><?php echo esc_html($opt); ?></option>
+                                                        <?php endforeach; ?>
+                                                    </select>
+                                                <?php elseif ($cf['type'] === 'radio'): 
+                                                    $opts = array_map('trim', explode(',', $cf['options'] ?? ''));
+                                                ?>
+                                                    <div style="display:flex; flex-wrap:wrap; gap:12px; margin-top:4px;">
+                                                        <?php foreach ($opts as $ridx => $opt): ?>
+                                                            <label style="font-size:13px; font-weight:500; display:flex; align-items:center; gap:5px; cursor:pointer;">
+                                                                <input type="radio" name="<?php echo esc_attr($f_name); ?>" value="<?php echo esc_attr($opt); ?>" <?php echo esc_attr($req_attr); ?>>
+                                                                <span><?php echo esc_html($opt); ?></span>
+                                                            </label>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                <?php elseif ($cf['type'] === 'date'): ?>
+                                                    <input type="date" id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" <?php echo esc_attr($req_attr); ?>>
+                                                <?php elseif ($cf['type'] === 'textarea'): ?>
+                                                    <textarea id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" rows="2" placeholder="Enter <?php echo esc_attr($cf['label']); ?>" <?php echo esc_attr($req_attr); ?>></textarea>
+                                                <?php elseif ($cf['type'] === 'number'): ?>
+                                                    <input type="number" id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" placeholder="Enter <?php echo esc_attr($cf['label']); ?>" <?php echo esc_attr($req_attr); ?>>
+                                                <?php else: ?>
+                                                    <input type="text" id="<?php echo esc_attr($f_name); ?>" name="<?php echo esc_attr($f_name); ?>" placeholder="Enter <?php echo esc_attr($cf['label']); ?>" <?php echo esc_attr($req_attr); ?>>
+                                                <?php endif; ?>
                                             <?php endif; ?>
                                         </div>
                                 <?php 
@@ -976,7 +1004,7 @@ class Evonee_Quote_Modal {
                                     ?>
                                         <tr style="border-bottom:1px solid #f1f5f9;">
                                             <td style="padding:6px; font-weight:600; color:#475569;"><?php echo esc_html(trim($parts[0])); ?>+ pcs</td>
-                                            <td style="padding:6px; text-align:right; font-weight:700; color:#6d28d9;"><?php echo esc_html($curr_sym . number_format(floatval($parts[1]), 2)); ?></td>
+                                            <td style="padding:6px; text-align:right; font-weight:700; color:#6d28d9;"><?php echo esc_html(Evonee_Quote_Admin::format_price(floatval($parts[1]), $settings)); ?></td>
                                         </tr>
                                     <?php
                                         endif;
