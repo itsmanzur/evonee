@@ -858,9 +858,15 @@ class Evonee_Quote_Modal {
                                 </div>
                                 <div class="eq-field">
                                     <label for="eq-zip-code">Delivery ZIP / Postal Code <span class="eq-req">*</span></label>
-                                    <input type="text" id="eq-zip-code" name="zip_code" placeholder="Enter ZIP / Postal Code" required>
+                                    <input type="text" id="eq-zip-code" name="zip_code" placeholder="Enter ZIP or postal code" required>
                                     <span class="eq-error-text"></span>
                                 </div>
+                                <?php if (!isset($settings['enable_call_booking']) || $settings['enable_call_booking'] === '1'): ?>
+                                    <div class="eq-field" style="margin-top:10px;">
+                                        <label for="eq-call-booking">📅 Schedule a 1-on-1 Consultation Call? (Optional)</label>
+                                        <input type="datetime-local" id="eq-call-booking" name="call_booking" style="font-size:13px;">
+                                    </div>
+                                <?php endif; ?>
                             </div>
 
                             <!-- SECTION 6: Additional Information -->

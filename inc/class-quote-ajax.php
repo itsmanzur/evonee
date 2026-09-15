@@ -884,10 +884,12 @@ class Evonee_Quote_Ajax {
         // 10. Send Notification Emails
         Evonee_Quote_Mailer::send_notification($submission);
 
-        // 11. Dispatch Webhook, Slack, Discord & Google Sheets Sync
+        // 11. Dispatch Webhook, Slack, Discord, Auto-Quoter & Twilio SMS (Phase 5)
         self::dispatch_webhook($submission);
         self::dispatch_slack($submission);
         self::dispatch_discord($submission);
+        self::maybe_auto_quote($submission);
+        self::dispatch_twilio_sms($submission);
         self::dispatch_google_sheets($submission);
 
         // 12. Return Success Response
@@ -1686,5 +1688,121 @@ class Evonee_Quote_Ajax {
             }
         }
         return '127.0.0.1';
+    }
+
+    /**
+     * Smart Auto-Quoter Pricing Rules Engine (Phase 5)
+     */
+    public static function maybe_auto_quote(array $submission) {
+        $settings = Evonee_Quote_Admin::get_settings();
+        if (empty($settings['enable_auto_quoter']) || $settings['enable_auto_quoter'] !== '1') {
+            return;
+        }
+
+        $qty     = intval($submission['quantity'] ?? 0);
+        $min_qty = intval($settings['auto_quoter_min_qty'] ?? 100);
+        if ($qty <= 0 || $qty < $min_qty) {
+            return;
+        }
+
+        $sub_id = intval($submission['id'] ?? 0);
+        if (!$sub_id) return;
+
+        $unit_price  = floatval($settings['auto_quoter_unit_price'] ?? 2.50);
+        $total_offer = $qty * $unit_price;
+
+        $token  = wp_generate_password(32, false);
+        $expiry = gmdate('Y-m-d H:i:s', time() + (30 * DAY_IN_SECONDS));
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'eq_quote_submissions';
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+        $wpdb->update(
+            $table_name,
+            [
+                'quoted_price'     => $total_offer,
+                'status'           => 'quoted',
+                'acceptance_token' => $token,
+                'token_expiry'     => $expiry
+            ],
+            ['id' => $sub_id],
+            ['%f', '%s', '%s', '%s'],
+            ['%d']
+        );
+
+        self::log_activity($sub_id, 'auto_quoted', 'Smart Auto-Quoter issued instant offer of $' . number_format($total_offer, 2));
+
+        // Dispatch Auto-Quoted Offer Email to Customer
+        $sales_email = self::get_sales_email();
+        $brand_name  = !empty($settings['email_brand_name']) ? $settings['email_brand_name'] : 'Evonee';
+        $accept_url  = add_query_arg(['eq_action' => 'accept_quote', 'token' => $token], home_url());
+        $decline_url = add_query_arg(['eq_action' => 'decline_quote', 'token' => $token], home_url());
+
+        $subject = '🎉 Instant Price Offer for your Quote #' . $sub_id . ' — ' . $brand_name;
+        $headers = [
+            'Content-Type: text/html; charset=UTF-8',
+            'From: ' . $brand_name . ' Sales <' . $sales_email . '>'
+        ];
+
+        $mail_body = '
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="UTF-8"></head>
+        <body style="font-family:sans-serif; background:#f8fafc; padding:20px; color:#1e293b;">
+            <div style="max-width:580px; margin:0 auto; background:#ffffff; border-radius:10px; overflow:hidden; border:1px solid #e2e8f0;">
+                <div style="background:#6d28d9; color:#fff; padding:20px; text-align:center;">
+                    <h2 style="margin:0;">🎉 Instant Price Offer Ready!</h2>
+                </div>
+                <div style="padding:24px;">
+                    <p>Hi <strong>' . esc_html($submission['full_name']) . '</strong>,</p>
+                    <p>Thank you for submitting a quote for <strong>' . esc_html($submission['product']) . '</strong>. Based on your requested quantity (' . esc_html($submission['quantity']) . '), here is your instant negotiated offer:</p>
+                    <div style="background:#faf5ff; border:1px solid #e9d5ff; border-radius:8px; padding:16px; margin:20px 0; text-align:center;">
+                        <span style="font-size:12px; color:#6d28d9; text-transform:uppercase; font-weight:700;">Instant Quoted Price</span>
+                        <div style="font-size:28px; font-weight:800; color:#4c1d95; margin-top:4px;">$' . number_format($total_offer, 2) . '</div>
+                    </div>
+                    <div style="text-align:center; margin-top:24px;">
+                        <a href="' . esc_url($accept_url) . '" style="background:#16a34a; color:#fff; padding:12px 24px; border-radius:6px; font-weight:bold; text-decoration:none; margin-right:10px;">✅ Accept & Sign Quote</a>
+                        <a href="' . esc_url($decline_url) . '" style="background:#dc2626; color:#fff; padding:12px 20px; border-radius:6px; font-weight:bold; text-decoration:none;">❌ Decline</a>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>';
+
+        wp_mail($submission['email'], $subject, $mail_body, $headers);
+    }
+
+    /**
+     * Twilio SMS & WhatsApp Notification Trigger (Phase 5)
+     */
+    public static function dispatch_twilio_sms(array $submission) {
+        $settings = Evonee_Quote_Admin::get_settings();
+        if (empty($settings['enable_twilio_sms']) || $settings['enable_twilio_sms'] !== '1') {
+            return;
+        }
+
+        $sid   = $settings['twilio_sid'] ?? '';
+        $token = $settings['twilio_token'] ?? '';
+        $from  = $settings['twilio_from_number'] ?? '';
+        if (empty($sid) || empty($token) || empty($from)) {
+            return;
+        }
+
+        $phone = $submission['phone'] ?? '';
+        if (empty($phone)) return;
+
+        $msg = sprintf("Hi %s, we received your quote request for %s (Qty: %s). Our team will prepare your custom quote & digital proof within 24h! - Evonee", $submission['full_name'], $submission['product'], $submission['quantity']);
+
+        $url = 'https://api.twilio.com/2010-04-01/Accounts/' . urlencode($sid) . '/Messages.json';
+        wp_remote_post($url, [
+            'headers' => [
+                'Authorization' => 'Basic ' . base64_encode($sid . ':' . $token)
+            ],
+            'body' => [
+                'From' => $from,
+                'To'   => $phone,
+                'Body' => $msg
+            ]
+        ]);
     }
 }

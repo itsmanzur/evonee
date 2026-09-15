@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // --- 1. OPEN MODAL & PREFILL DATA ---
     document.addEventListener('click', function (e) {
-        const trigger = e.target.closest('.eq-trigger');
+        const trigger = e.target.closest('.eq-trigger, .eq-open-modal');
         if (!trigger) return;
 
         e.preventDefault();
