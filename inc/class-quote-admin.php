@@ -112,6 +112,8 @@ class Evonee_Quote_Admin {
             'enable_analytics'         => '1',
             'enable_auto_reply'        => '1',
             'enable_wc_auto'           => '1',
+            'enable_global_floating_btn' => '1',
+            'global_floating_btn_text'   => '💬 Request Free Quote',
             'enable_deposit_payment'   => '0',
             'deposit_percentage'       => '50',
             'show_field_company'       => '1',
@@ -2796,6 +2798,8 @@ class Evonee_Quote_Admin {
                 'enable_analytics'         => isset($_POST['enable_analytics']) ? '1' : '0',
                 'enable_auto_reply'        => isset($_POST['enable_auto_reply']) ? '1' : '0',
                 'enable_wc_auto'           => isset($_POST['enable_wc_auto']) ? '1' : '0',
+                'enable_global_floating_btn' => isset($_POST['enable_global_floating_btn']) ? '1' : '0',
+                'global_floating_btn_text'   => sanitize_text_field(wp_unslash($_POST['global_floating_btn_text'] ?? '💬 Request Free Quote')),
                 'show_field_company'       => isset($_POST['show_field_company']) ? '1' : '0',
                 'show_field_text_specs'    => isset($_POST['show_field_text_specs']) ? '1' : '0',
                 'show_field_specific_date' => isset($_POST['show_field_specific_date']) ? '1' : '0',
@@ -2983,6 +2987,20 @@ class Evonee_Quote_Admin {
                                     </div>
                                     <label class="evonee-toggle">
                                         <input type="checkbox" name="enable_wc_auto" value="1" <?php checked($settings['enable_wc_auto'], '1'); ?>>
+                                        <span class="evonee-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div class="evonee-setting-row">
+                                    <div class="evonee-setting-info">
+                                        <strong>🌐 Sitewide Floating Sticky Quote Button (Global Non-WooCommerce)</strong>
+                                        <p>Displays a floating sticky action button in the bottom corner of every page to open the quote modal anywhere on the site.</p>
+                                        <div style="margin-top:6px;">
+                                            <input type="text" name="global_floating_btn_text" value="<?php echo esc_attr($settings['global_floating_btn_text'] ?? '💬 Request Free Quote'); ?>" placeholder="Button Label (e.g. 💬 Request Free Quote)" style="font-size:12px; padding:4px 8px; width:220px; border:1px solid #cbd5e1; border-radius:4px;">
+                                        </div>
+                                    </div>
+                                    <label class="evonee-toggle">
+                                        <input type="checkbox" name="enable_global_floating_btn" value="1" <?php checked($settings['enable_global_floating_btn'] ?? '1', '1'); ?>>
                                         <span class="evonee-slider"></span>
                                     </label>
                                 </div>
