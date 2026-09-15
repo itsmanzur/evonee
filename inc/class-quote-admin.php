@@ -2143,9 +2143,13 @@ class Evonee_Quote_Admin {
                                     </div>
                                 </div>
 
-                                <div style="background:#f1f5f9; padding:14px; border-radius:8px; margin-top:12px; margin-bottom:16px;">
-                                    <strong style="color:#1e293b; display:block; margin-bottom:4px;">💡 Trigger Modal from Any Custom HTML Element:</strong>
-                                    <p style="margin:0; font-size:13px; color:#475569;">Add class <code>eq-open-modal</code> to any button or link. Pass optional <code>data-product="Custom Item"</code> and <code>data-image="URL"</code> to pre-fill the popup modal automatically!</p>
+                                <div style="background:#faf5ff; border:1px solid #e9d5ff; padding:16px; border-radius:8px; margin-top:14px; margin-bottom:16px;">
+                                    <strong style="color:#6d28d9; font-size:14px; display:block; margin-bottom:6px;">🌐 How to Use Evonee Quotes Sitewide (Global Non-WooCommerce):</strong>
+                                    <ul style="margin:0; padding-left:18px; font-size:13px; color:#475569; line-height:1.6;">
+                                        <li><strong>Sitewide Floating Sticky Button:</strong> Enable <code>Sitewide Floating Sticky Quote Button</code> in <code>Evonee Quotes ➔ Settings</code> for a 1-click floating button on every page.</li>
+                                        <li><strong>WordPress Nav Menu Item:</strong> Go to <code>Appearance ➔ Menus</code>, edit any menu item, and add CSS Class <code>eq-trigger</code> (or <code>eq-open-modal</code>).</li>
+                                        <li><strong>Any Custom Button or Link:</strong> Add CSS class <code>eq-trigger</code> to any HTML element. Optionally pass <code>data-product="Custom Service"</code> to pre-fill product name.</li>
+                                    </ul>
                                 </div>
 
                                 <div style="margin-bottom:14px;">
