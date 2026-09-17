@@ -28,7 +28,6 @@ require_once EVONEE_PLUGIN_DIR . 'inc/class-quote-modal.php';
 require_once EVONEE_PLUGIN_DIR . 'inc/class-quote-ajax.php';
 require_once EVONEE_PLUGIN_DIR . 'inc/class-quote-mailer.php';
 require_once EVONEE_PLUGIN_DIR . 'inc/class-quote-admin.php';
-require_once EVONEE_PLUGIN_DIR . 'inc/class-quote-elementor.php';
 
 // Plugin Activation Hook - Create Database Table
 register_activation_hook(__FILE__, ['Evonee_Quote_Ajax', 'create_submissions_table']);
@@ -58,15 +57,31 @@ add_action('plugins_loaded', function() {
     }
 });
 
-// Register Elementor Widgets (Phase 2.3 & Card Variations)
-add_action('elementor/widgets/register', function($widgets_manager) {
+// Register Elementor Widgets (v3.5+ & Legacy Fallback)
+$register_elementor_widgets = function($widgets_manager) {
+    if (!class_exists('\Elementor\Widget_Base')) {
+        return;
+    }
+    require_once EVONEE_PLUGIN_DIR . 'inc/class-quote-elementor.php';
+
     if (class_exists('Evonee_Elementor_Quote_Button_Widget')) {
-        $widgets_manager->register(new \Evonee_Elementor_Quote_Button_Widget());
+        if (method_exists($widgets_manager, 'register')) {
+            $widgets_manager->register(new \Evonee_Elementor_Quote_Button_Widget());
+        } elseif (method_exists($widgets_manager, 'register_widget_type')) {
+            $widgets_manager->register_widget_type(new \Evonee_Elementor_Quote_Button_Widget());
+        }
     }
     if (class_exists('Evonee_Elementor_Product_Grid_Widget')) {
-        $widgets_manager->register(new \Evonee_Elementor_Product_Grid_Widget());
+        if (method_exists($widgets_manager, 'register')) {
+            $widgets_manager->register(new \Evonee_Elementor_Product_Grid_Widget());
+        } elseif (method_exists($widgets_manager, 'register_widget_type')) {
+            $widgets_manager->register_widget_type(new \Evonee_Elementor_Product_Grid_Widget());
+        }
     }
-});
+};
+
+add_action('elementor/widgets/register', $register_elementor_widgets);
+add_action('elementor/widgets/widgets_registered', $register_elementor_widgets);
 
 // Register Gutenberg Block (Phase 2.3)
 add_action('init', function() {

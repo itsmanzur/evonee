@@ -3,9 +3,11 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-if (class_exists('\Elementor\Widget_Base')) {
+if (!class_exists('\Elementor\Widget_Base')) {
+    return;
+}
 
-    class Evonee_Elementor_Quote_Button_Widget extends \Elementor\Widget_Base {
+class Evonee_Elementor_Quote_Button_Widget extends \Elementor\Widget_Base {
 
         public function get_name() {
             return 'evonee_quote_button';
@@ -170,4 +172,3 @@ if (class_exists('\Elementor\Widget_Base')) {
             ]);
         }
     }
-}
