@@ -2141,8 +2141,72 @@ class Evonee_Quote_Admin {
                                             <td><code>yes</code> / <code>no</code></td>
                                             <td>Show the grid heading. Off by default.</td>
                                         </tr>
+                                        <tr>
+                                            <td><code>card_style</code></td>
+                                            <td><code>classic</code></td>
+                                            <td><code>classic</code>, <code>floating</code>, <code>compact</code>, <code>gradient</code>, <code>horizontal</code>, <code>dark</code></td>
+                                            <td>Product card design variation style modifier. Overrides Settings.</td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>badge</code></td>
+                                            <td><code>(empty)</code></td>
+                                            <td>e.g. <code>Popular</code>, <code>Best Seller</code>, <code>🔥 Hot</code></td>
+                                            <td>Renders a floating top-right badge tag on product cards.</td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>show_price</code></td>
+                                            <td><code>0</code></td>
+                                            <td><code>1</code> / <code>yes</code> / <code>0</code></td>
+                                            <td>Displays an estimated unit price tag badge on product cards.</td>
+                                        </tr>
                                     </tbody>
                                 </table>
+
+                                <!-- Card Variations Guide Box -->
+                                <div style="background:#faf5ff; border:1px solid #e9d5ff; border-radius:12px; padding:20px; margin-top:20px;">
+                                    <h3 style="margin:0 0 10px; color:#6d28d9; font-size:15px; display:flex; align-items:center; gap:8px;">
+                                        🎨 Product Card Design Variations Guide
+                                    </h3>
+                                    <p style="font-size:13px; color:#475569; margin:0 0 14px;">Choose from 6 pre-styled card variations for your product showcase grids:</p>
+
+                                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                                        <div style="background:#ffffff; border:1px solid #e9d5ff; border-radius:8px; padding:12px;">
+                                            <strong style="color:#0f172a; font-size:13px; display:block;">1. Classic Soft Pill (Default)</strong>
+                                            <small style="color:#64748b; display:block; margin:2px 0 6px;">Clean white card with soft purple pill button.</small>
+                                            <code style="font-size:11px; background:#f1f5f9; padding:2px 6px; border-radius:4px; display:inline-block;">[evonee_products card_style="classic"]</code>
+                                        </div>
+
+                                        <div style="background:#ffffff; border:1px solid #e9d5ff; border-radius:8px; padding:12px;">
+                                            <strong style="color:#0f172a; font-size:13px; display:block;">2. Modern Floating (Shadow & Badge)</strong>
+                                            <small style="color:#64748b; display:block; margin:2px 0 6px;">Elevated floating shadow with top corner badge.</small>
+                                            <code style="font-size:11px; background:#f1f5f9; padding:2px 6px; border-radius:4px; display:inline-block;">[evonee_products card_style="floating" badge="Best Seller"]</code>
+                                        </div>
+
+                                        <div style="background:#ffffff; border:1px solid #e9d5ff; border-radius:8px; padding:12px;">
+                                            <strong style="color:#0f172a; font-size:13px; display:block;">3. E-Commerce Compact</strong>
+                                            <small style="color:#64748b; display:block; margin:2px 0 6px;">Compact vertical card with starting price tag.</small>
+                                            <code style="font-size:11px; background:#f1f5f9; padding:2px 6px; border-radius:4px; display:inline-block;">[evonee_products card_style="compact" show_price="1"]</code>
+                                        </div>
+
+                                        <div style="background:#ffffff; border:1px solid #e9d5ff; border-radius:8px; padding:12px;">
+                                            <strong style="color:#0f172a; font-size:13px; display:block;">4. Gradient Glass (Luxury Tech)</strong>
+                                            <small style="color:#64748b; display:block; margin:2px 0 6px;">Vibrant gradient outline border and gradient CTA.</small>
+                                            <code style="font-size:11px; background:#f1f5f9; padding:2px 6px; border-radius:4px; display:inline-block;">[evonee_products card_style="gradient" badge="🔥 Hot"]</code>
+                                        </div>
+
+                                        <div style="background:#ffffff; border:1px solid #e9d5ff; border-radius:8px; padding:12px;">
+                                            <strong style="color:#0f172a; font-size:13px; display:block;">5. Horizontal Split (List Layout)</strong>
+                                            <small style="color:#64748b; display:block; margin:2px 0 6px;">Row layout: thumbnail left, details right.</small>
+                                            <code style="font-size:11px; background:#f1f5f9; padding:2px 6px; border-radius:4px; display:inline-block;">[evonee_products card_style="horizontal" show_price="1" cols="1"]</code>
+                                        </div>
+
+                                        <div style="background:#ffffff; border:1px solid #e9d5ff; border-radius:8px; padding:12px;">
+                                            <strong style="color:#0f172a; font-size:13px; display:block;">6. Dark Sleek Edition</strong>
+                                            <small style="color:#64748b; display:block; margin:2px 0 6px;">Dark theme container with neon purple accents.</small>
+                                            <code style="font-size:11px; background:#f1f5f9; padding:2px 6px; border-radius:4px; display:inline-block;">[evonee_products card_style="dark" badge="Custom"]</code>
+                                        </div>
+                                    </div>
+                                </div>
 
                                 <div style="margin-top:16px; margin-bottom:14px;">
                                     <strong>2. Quote Trigger Button Shortcode:</strong>
