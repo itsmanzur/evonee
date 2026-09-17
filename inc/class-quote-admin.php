@@ -427,6 +427,18 @@ class Evonee_Quote_Admin {
                 </div>
             </div>
 
+            <!-- Preset & Mode Indicator Banner -->
+            <div style="background:#f3f0fc; border:1px solid #ddd6fe; border-left:4px solid #6d28d9; border-radius:10px; padding:12px 18px; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                <div style="display:flex; align-items:center; gap:10px; font-size:13px; color:#4c1d95;">
+                    <span style="font-size:18px;">⚙️</span>
+                    <span><strong>Active Store Configuration:</strong> B2B Quotation Engine is active. Customize branding, presets, or currency anytime.</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-setup-wizard')); ?>" class="button button-secondary button-small" style="font-weight:700; color:#6d28d9; border-color:#c4b5fd;">⚡ Launch Setup Wizard</a>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-settings')); ?>" class="button button-secondary button-small" style="font-weight:700;">⚙️ Settings</a>
+                </div>
+            </div>
+
             <!-- Urgent Action Alert Banner -->
             <?php if ($urgent_count > 0): ?>
                 <div class="evonee-dash-alert" style="background:#fff7ed; border:1px solid #ffedd5; border-left:4px solid #f97316; border-radius:10px; padding:14px 20px; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; gap:16px;">
@@ -472,6 +484,54 @@ class Evonee_Quote_Admin {
                     <div>
                         <div class="evonee-stat-val" style="font-size:26px; font-weight:800; color:#16a34a; line-height:1.2;"><?php echo esc_html(number_format($won_deals)); ?></div>
                         <div class="evonee-stat-lbl" style="font-size:12px; color:#64748b; font-weight:600; margin-top:2px;">Won Deals (<?php echo esc_html($win_rate); ?>% Win Rate)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pipeline Funnel & Monthly Target Goal Card -->
+            <div class="evonee-doc-card" style="margin-bottom:24px;">
+                <div class="evonee-card-header" style="padding:14px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0; border-top-left-radius:12px; border-top-right-radius:12px; display:flex; justify-content:space-between; align-items:center;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="dashicons dashicons-chart-pie" style="color:#6d28d9;"></span>
+                        <h2 style="font-size:14px; font-weight:700; color:#1e293b; margin:0;">🎯 Pipeline Funnel & Monthly Revenue Target</h2>
+                    </div>
+                    <span style="font-size:12px; font-weight:700; color:#16a34a; background:#f0fdf4; border:1px solid #bbf7d0; padding:2px 10px; border-radius:12px;">
+                        <?php echo esc_html($win_rate); ?>% Win Rate
+                    </span>
+                </div>
+                <div class="evonee-card-body" style="padding:20px;">
+                    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; text-align:center; margin-bottom:18px;">
+                        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px;">
+                            <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">1. New Requests</span>
+                            <div style="font-size:20px; font-weight:800; color:#16a34a; margin-top:4px;"><?php echo esc_html($new_count); ?></div>
+                        </div>
+                        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px;">
+                            <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">2. Quoted Offers</span>
+                            <div style="font-size:20px; font-weight:800; color:#2563eb; margin-top:4px;"><?php echo esc_html($quoted_count); ?></div>
+                        </div>
+                        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px;">
+                            <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">3. Approved Deals</span>
+                            <div style="font-size:20px; font-weight:800; color:#7c3aed; margin-top:4px;"><?php echo esc_html($approved_count); ?></div>
+                        </div>
+                        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px;">
+                            <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">4. Pipeline Value</span>
+                            <div style="font-size:20px; font-weight:800; color:#059669; margin-top:4px;"><?php echo esc_html($curr_sym) . esc_html(number_format($total_pipeline_val, 2)); ?></div>
+                        </div>
+                    </div>
+
+                    <!-- Target Progress Bar -->
+                    <?php
+                    $target_goal = 10000;
+                    $goal_pct    = min(100, round(($total_pipeline_val / $target_goal) * 100));
+                    ?>
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; color:#334155; margin-bottom:6px;">
+                            <span>Monthly Quoted Goal ($10,000 Target)</span>
+                            <span><?php echo esc_html($curr_sym) . esc_html(number_format($total_pipeline_val, 2)); ?> / $10,000 (<?php echo esc_html($goal_pct); ?>%)</span>
+                        </div>
+                        <div style="background:#f1f5f9; border-radius:10px; height:10px; overflow:hidden;">
+                            <div style="background:linear-gradient(90deg, #16a34a 0%, #22c55e 100%); height:100%; width:<?php echo esc_attr($goal_pct); ?>%; border-radius:10px;"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -526,6 +586,7 @@ class Evonee_Quote_Admin {
                                             <th style="font-size:11px; text-transform:uppercase; color:#64748b;">Product</th>
                                             <th style="font-size:11px; text-transform:uppercase; color:#64748b;">Status</th>
                                             <th style="font-size:11px; text-transform:uppercase; color:#64748b; text-align:right;">Quoted Price</th>
+                                            <th style="font-size:11px; text-transform:uppercase; color:#64748b; text-align:right;">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -554,6 +615,11 @@ class Evonee_Quote_Admin {
                                                 <td style="text-align:right; font-weight:700; color:#0f172a;">
                                                     <?php echo (!empty($q->quoted_price) && floatval($q->quoted_price) > 0) ? esc_html($curr_sym) . number_format($q->quoted_price, 2) : '<span style="color:#94a3b8; font-weight:normal;">Unquoted</span>'; ?>
                                                 </td>
+                                                <td style="text-align:right;">
+                                                    <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-submissions&view_id=' . intval($q->id))); ?>" class="button button-small" style="background:#faf5ff; border-color:#e9d5ff; color:#6d28d9; font-weight:700;" title="View Detail & Reply">
+                                                        👁️ View
+                                                    </a>
+                                                </td>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -578,6 +644,41 @@ class Evonee_Quote_Admin {
 
                 <!-- Right Column -->
                 <div>
+                    <!-- Live Audit Activity Feed Card -->
+                    <div class="evonee-doc-card" style="margin-bottom:24px;">
+                        <div class="evonee-card-header" style="padding:14px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0; border-top-left-radius:12px; border-top-right-radius:12px; display:flex; align-items:center; gap:8px;">
+                            <span class="dashicons dashicons-rss" style="color:#6d28d9;"></span>
+                            <h2 style="font-size:14px; font-weight:700; color:#1e293b; margin:0;">⚡ Live Customer & Audit Activity</h2>
+                        </div>
+                        <div class="evonee-card-body" style="padding:14px 20px;">
+                            <?php
+                            global $wpdb;
+                            $act_table = $wpdb->prefix . 'eq_quote_activity_log';
+                            $recent_acts = [];
+                            // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+                            if ($wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $act_table)) === $act_table) {
+                                // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+                                $recent_acts = $wpdb->get_results("SELECT * FROM {$act_table} ORDER BY id DESC LIMIT 5");
+                            }
+                            ?>
+                            <?php if (!empty($recent_acts)): ?>
+                                <ul style="margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:10px;">
+                                    <?php foreach ($recent_acts as $act): ?>
+                                        <li style="font-size:12px; border-bottom:1px solid #f1f5f9; padding-bottom:8px;">
+                                            <div style="font-weight:700; color:#0f172a; margin-bottom:2px; display:flex; justify-content:space-between;">
+                                                <span>Quote #<?php echo esc_html($act->quote_id); ?> — <?php echo esc_html(ucwords(str_replace('_', ' ', $act->action))); ?></span>
+                                                <small style="color:#94a3b8;"><?php echo esc_html(wp_date('M j, H:i', strtotime($act->created_at))); ?></small>
+                                            </div>
+                                            <div style="color:#64748b; font-size:11.5px;"><?php echo esc_html($act->details); ?></div>
+                                        </li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            <?php else: ?>
+                                <p style="font-size:12px; color:#94a3b8; text-align:center; margin:10px 0;">No activity logs recorded yet.</p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
                     <!-- System Health Diagnostic Card -->
                     <div class="evonee-doc-card" style="margin-bottom:24px;">
                         <div class="evonee-card-header" style="padding:14px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0; border-top-left-radius:12px; border-top-right-radius:12px; display:flex; align-items:center; gap:8px;">
