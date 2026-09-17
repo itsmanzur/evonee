@@ -155,6 +155,117 @@ class Evonee_Elementor_Quote_Button_Widget extends \Elementor\Widget_Base {
             );
 
             $this->end_controls_section();
+
+            // Style Tab Controls (Brand Color Customizer)
+            $this->start_controls_section(
+                'style_section',
+                [
+                    'label' => __('Brand Colors & Styling', 'evonee'),
+                    'tab'   => \Elementor\Controls_Manager::TAB_STYLE,
+                ]
+            );
+
+            $this->add_control(
+                'title_color',
+                [
+                    'label'     => __('Product Title Color', 'evonee'),
+                    'type'      => \Elementor\Controls_Manager::COLOR,
+                    'selectors' => [
+                        '{{WRAPPER}} .el-card-title' => 'color: {{VALUE}} !important;',
+                    ],
+                ]
+            );
+
+            $this->add_control(
+                'title_hover_color',
+                [
+                    'label'     => __('Product Title Hover Color', 'evonee'),
+                    'type'      => \Elementor\Controls_Manager::COLOR,
+                    'selectors' => [
+                        '{{WRAPPER}} .el-card:hover .el-card-title' => 'color: {{VALUE}} !important;',
+                    ],
+                ]
+            );
+
+            $this->add_control(
+                'accent_color',
+                [
+                    'label'     => __('Top Accent / Hover Border Color', 'evonee'),
+                    'type'      => \Elementor\Controls_Manager::COLOR,
+                    'selectors' => [
+                        '{{WRAPPER}} .el-card::before' => 'background: {{VALUE}} !important;',
+                        '{{WRAPPER}} .el-card:hover'  => 'border-color: {{VALUE}} !important;',
+                    ],
+                ]
+            );
+
+            $this->add_control(
+                'btn_bg',
+                [
+                    'label'     => __('Button Normal Background', 'evonee'),
+                    'type'      => \Elementor\Controls_Manager::COLOR,
+                    'selectors' => [
+                        '{{WRAPPER}} .el-btn-card' => 'background: {{VALUE}} !important;',
+                    ],
+                ]
+            );
+
+            $this->add_control(
+                'btn_text',
+                [
+                    'label'     => __('Button Normal Text Color', 'evonee'),
+                    'type'      => \Elementor\Controls_Manager::COLOR,
+                    'selectors' => [
+                        '{{WRAPPER}} .el-btn-card' => 'color: {{VALUE}} !important;',
+                    ],
+                ]
+            );
+
+            $this->add_control(
+                'btn_hover_bg',
+                [
+                    'label'     => __('Button Hover Background', 'evonee'),
+                    'type'      => \Elementor\Controls_Manager::COLOR,
+                    'selectors' => [
+                        '{{WRAPPER}} .el-card:hover .el-btn-card' => 'background: {{VALUE}} !important;',
+                    ],
+                ]
+            );
+
+            $this->add_control(
+                'btn_hover_text',
+                [
+                    'label'     => __('Button Hover Text Color', 'evonee'),
+                    'type'      => \Elementor\Controls_Manager::COLOR,
+                    'selectors' => [
+                        '{{WRAPPER}} .el-card:hover .el-btn-card' => 'color: {{VALUE}} !important;',
+                    ],
+                ]
+            );
+
+            $this->add_control(
+                'badge_bg',
+                [
+                    'label'     => __('Badge Tag Background', 'evonee'),
+                    'type'      => \Elementor\Controls_Manager::COLOR,
+                    'selectors' => [
+                        '{{WRAPPER}} .el-card-badge' => 'background: {{VALUE}} !important;',
+                    ],
+                ]
+            );
+
+            $this->add_control(
+                'badge_text_color',
+                [
+                    'label'     => __('Badge Tag Text Color', 'evonee'),
+                    'type'      => \Elementor\Controls_Manager::COLOR,
+                    'selectors' => [
+                        '{{WRAPPER}} .el-card-badge' => 'color: {{VALUE}} !important;',
+                    ],
+                ]
+            );
+
+            $this->end_controls_section();
         }
 
         protected function render() {

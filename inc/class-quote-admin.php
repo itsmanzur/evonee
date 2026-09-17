@@ -159,6 +159,19 @@ class Evonee_Quote_Admin {
             'enable_cart_quote'        => '0',
             'products_grid_limit'      => '12',
             'show_products_title'      => '0',
+            // Product Grid Card Brand Colors
+            'card_accent_color'        => '#6d28d9',
+            'card_border_hover_color'  => '#a78bfa',
+            'card_title_color'         => '#0f172a',
+            'card_title_hover_color'   => '#6d28d9',
+            'card_btn_bg'              => '#f3f0fc',
+            'card_btn_text'            => '#6d28d9',
+            'card_btn_hover_bg'        => '#6d28d9',
+            'card_btn_hover_text'      => '#ffffff',
+            'card_badge_bg'            => '#7c3aed',
+            'card_badge_text'          => '#ffffff',
+            'card_price_bg'            => '#f0fdf4',
+            'card_price_text'          => '#16a34a',
             // Step 3 & 4 Enterprise Settings
             'pdf_company_name'         => 'Evonee Promotional Products',
             'pdf_tax_id'               => '',
@@ -2919,6 +2932,18 @@ class Evonee_Quote_Admin {
                 'email_footer_text'        => sanitize_text_field(wp_unslash($_POST['email_footer_text'] ?? '')),
                 'products_grid_limit'      => max(0, intval($_POST['products_grid_limit'] ?? 12)),
                 'show_products_title'      => isset($_POST['show_products_title']) ? '1' : '0',
+                'card_accent_color'        => sanitize_hex_color(wp_unslash($_POST['card_accent_color'] ?? '')) ?: '#6d28d9',
+                'card_border_hover_color'  => sanitize_hex_color(wp_unslash($_POST['card_border_hover_color'] ?? '')) ?: '#a78bfa',
+                'card_title_color'         => sanitize_hex_color(wp_unslash($_POST['card_title_color'] ?? '')) ?: '#0f172a',
+                'card_title_hover_color'   => sanitize_hex_color(wp_unslash($_POST['card_title_hover_color'] ?? '')) ?: '#6d28d9',
+                'card_btn_bg'              => sanitize_hex_color(wp_unslash($_POST['card_btn_bg'] ?? '')) ?: '#f3f0fc',
+                'card_btn_text'            => sanitize_hex_color(wp_unslash($_POST['card_btn_text'] ?? '')) ?: '#6d28d9',
+                'card_btn_hover_bg'        => sanitize_hex_color(wp_unslash($_POST['card_btn_hover_bg'] ?? '')) ?: '#6d28d9',
+                'card_btn_hover_text'      => sanitize_hex_color(wp_unslash($_POST['card_btn_hover_text'] ?? '')) ?: '#ffffff',
+                'card_badge_bg'            => sanitize_hex_color(wp_unslash($_POST['card_badge_bg'] ?? '')) ?: '#7c3aed',
+                'card_badge_text'          => sanitize_hex_color(wp_unslash($_POST['card_badge_text'] ?? '')) ?: '#ffffff',
+                'card_price_bg'            => sanitize_hex_color(wp_unslash($_POST['card_price_bg'] ?? '')) ?: '#f0fdf4',
+                'card_price_text'          => sanitize_hex_color(wp_unslash($_POST['card_price_text'] ?? '')) ?: '#16a34a',
                 'pdf_company_name'         => sanitize_text_field(wp_unslash($_POST['pdf_company_name'] ?? '')),
                 'pdf_tax_id'               => sanitize_text_field(wp_unslash($_POST['pdf_tax_id'] ?? '')),
                 'pdf_accent_color'         => sanitize_hex_color(wp_unslash($_POST['pdf_accent_color'] ?? '')) ?: '#6d28d9',
@@ -3321,6 +3346,109 @@ class Evonee_Quote_Admin {
                                         <input type="checkbox" name="show_products_title" value="1" <?php checked($settings['show_products_title'], '1'); ?>>
                                         <span class="evonee-slider"></span>
                                     </label>
+                                </div>
+
+                                <div style="margin-top:20px; padding-top:20px; border-top:1px solid #e2e8f0;">
+                                    <h3 style="margin:0 0 12px; font-size:15px; font-weight:700; color:#3b0764;">🎨 Product Grid Brand Colors Customizer</h3>
+                                    <p class="description" style="margin-bottom:16px;">Customize default colors for product cards to match your store brand styling.</p>
+
+                                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; margin-bottom:16px;">
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:4px; font-size:12.5px;">Top Accent Color:</label>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <input type="color" name="card_accent_color" value="<?php echo esc_attr($settings['card_accent_color'] ?? '#6d28d9'); ?>" style="width:36px; height:36px; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">
+                                                <input type="text" value="<?php echo esc_attr($settings['card_accent_color'] ?? '#6d28d9'); ?>" class="regular-text" style="width:100px; font-family:monospace;" readonly>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:4px; font-size:12.5px;">Card Hover Border Color:</label>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <input type="color" name="card_border_hover_color" value="<?php echo esc_attr($settings['card_border_hover_color'] ?? '#a78bfa'); ?>" style="width:36px; height:36px; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">
+                                                <input type="text" value="<?php echo esc_attr($settings['card_border_hover_color'] ?? '#a78bfa'); ?>" class="regular-text" style="width:100px; font-family:monospace;" readonly>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:4px; font-size:12.5px;">Title Normal Color:</label>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <input type="color" name="card_title_color" value="<?php echo esc_attr($settings['card_title_color'] ?? '#0f172a'); ?>" style="width:36px; height:36px; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">
+                                                <input type="text" value="<?php echo esc_attr($settings['card_title_color'] ?? '#0f172a'); ?>" class="regular-text" style="width:100px; font-family:monospace;" readonly>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:4px; font-size:12.5px;">Title Hover Color:</label>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <input type="color" name="card_title_hover_color" value="<?php echo esc_attr($settings['card_title_hover_color'] ?? '#6d28d9'); ?>" style="width:36px; height:36px; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">
+                                                <input type="text" value="<?php echo esc_attr($settings['card_title_hover_color'] ?? '#6d28d9'); ?>" class="regular-text" style="width:100px; font-family:monospace;" readonly>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:4px; font-size:12.5px;">Button Background:</label>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <input type="color" name="card_btn_bg" value="<?php echo esc_attr($settings['card_btn_bg'] ?? '#f3f0fc'); ?>" style="width:36px; height:36px; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">
+                                                <input type="text" value="<?php echo esc_attr($settings['card_btn_bg'] ?? '#f3f0fc'); ?>" class="regular-text" style="width:100px; font-family:monospace;" readonly>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:4px; font-size:12.5px;">Button Text Color:</label>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <input type="color" name="card_btn_text" value="<?php echo esc_attr($settings['card_btn_text'] ?? '#6d28d9'); ?>" style="width:36px; height:36px; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">
+                                                <input type="text" value="<?php echo esc_attr($settings['card_btn_text'] ?? '#6d28d9'); ?>" class="regular-text" style="width:100px; font-family:monospace;" readonly>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:4px; font-size:12.5px;">Button Hover Background:</label>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <input type="color" name="card_btn_hover_bg" value="<?php echo esc_attr($settings['card_btn_hover_bg'] ?? '#6d28d9'); ?>" style="width:36px; height:36px; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">
+                                                <input type="text" value="<?php echo esc_attr($settings['card_btn_hover_bg'] ?? '#6d28d9'); ?>" class="regular-text" style="width:100px; font-family:monospace;" readonly>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:4px; font-size:12.5px;">Button Hover Text:</label>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <input type="color" name="card_btn_hover_text" value="<?php echo esc_attr($settings['card_btn_hover_text'] ?? '#ffffff'); ?>" style="width:36px; height:36px; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">
+                                                <input type="text" value="<?php echo esc_attr($settings['card_btn_hover_text'] ?? '#ffffff'); ?>" class="regular-text" style="width:100px; font-family:monospace;" readonly>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:4px; font-size:12.5px;">Badge Background:</label>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <input type="color" name="card_badge_bg" value="<?php echo esc_attr($settings['card_badge_bg'] ?? '#7c3aed'); ?>" style="width:36px; height:36px; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">
+                                                <input type="text" value="<?php echo esc_attr($settings['card_badge_bg'] ?? '#7c3aed'); ?>" class="regular-text" style="width:100px; font-family:monospace;" readonly>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:4px; font-size:12.5px;">Badge Text Color:</label>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <input type="color" name="card_badge_text" value="<?php echo esc_attr($settings['card_badge_text'] ?? '#ffffff'); ?>" style="width:36px; height:36px; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">
+                                                <input type="text" value="<?php echo esc_attr($settings['card_badge_text'] ?? '#ffffff'); ?>" class="regular-text" style="width:100px; font-family:monospace;" readonly>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:4px; font-size:12.5px;">Price Tag Background:</label>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <input type="color" name="card_price_bg" value="<?php echo esc_attr($settings['card_price_bg'] ?? '#f0fdf4'); ?>" style="width:36px; height:36px; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">
+                                                <input type="text" value="<?php echo esc_attr($settings['card_price_bg'] ?? '#f0fdf4'); ?>" class="regular-text" style="width:100px; font-family:monospace;" readonly>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label style="font-weight:600; display:block; margin-bottom:4px; font-size:12.5px;">Price Tag Text Color:</label>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <input type="color" name="card_price_text" value="<?php echo esc_attr($settings['card_price_text'] ?? '#16a34a'); ?>" style="width:36px; height:36px; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer;">
+                                                <input type="text" value="<?php echo esc_attr($settings['card_price_text'] ?? '#16a34a'); ?>" class="regular-text" style="width:100px; font-family:monospace;" readonly>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div class="evonee-setting-row" style="border-top:1px solid #e2e8f0; margin-top:12px; padding-top:12px; border-bottom:none; padding-bottom:0;">

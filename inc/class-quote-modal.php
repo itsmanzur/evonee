@@ -1202,6 +1202,54 @@ class Evonee_Quote_Modal {
 
         $placeholder = self::get_svg_placeholder();
 
+        $grid_inline_styles = [
+            '--eq-cols-desktop: ' . esc_attr($cols_desktop),
+            '--eq-cols-tablet: ' . esc_attr($cols_tablet),
+            '--eq-cols-mobile: ' . esc_attr($cols_mobile),
+            '--eq-grid-gap: ' . esc_attr($gap),
+            '--eq-img-height: ' . esc_attr($img_height),
+            '--eq-img-fit: ' . esc_attr($img_fit),
+        ];
+
+        if (!empty($settings['card_accent_color'])) {
+            $grid_inline_styles[] = '--eq-accent-color: ' . esc_attr($settings['card_accent_color']);
+        }
+        if (!empty($settings['card_border_hover_color'])) {
+            $grid_inline_styles[] = '--eq-border-hover-color: ' . esc_attr($settings['card_border_hover_color']);
+        }
+        if (!empty($settings['card_title_color'])) {
+            $grid_inline_styles[] = '--eq-title-color: ' . esc_attr($settings['card_title_color']);
+        }
+        if (!empty($settings['card_title_hover_color'])) {
+            $grid_inline_styles[] = '--eq-title-hover-color: ' . esc_attr($settings['card_title_hover_color']);
+        }
+        if (!empty($settings['card_btn_bg'])) {
+            $grid_inline_styles[] = '--eq-btn-bg: ' . esc_attr($settings['card_btn_bg']);
+        }
+        if (!empty($settings['card_btn_text'])) {
+            $grid_inline_styles[] = '--eq-btn-text: ' . esc_attr($settings['card_btn_text']);
+        }
+        if (!empty($settings['card_btn_hover_bg'])) {
+            $grid_inline_styles[] = '--eq-btn-hover-bg: ' . esc_attr($settings['card_btn_hover_bg']);
+        }
+        if (!empty($settings['card_btn_hover_text'])) {
+            $grid_inline_styles[] = '--eq-btn-hover-text: ' . esc_attr($settings['card_btn_hover_text']);
+        }
+        if (!empty($settings['card_badge_bg'])) {
+            $grid_inline_styles[] = '--eq-badge-bg: ' . esc_attr($settings['card_badge_bg']);
+        }
+        if (!empty($settings['card_badge_text'])) {
+            $grid_inline_styles[] = '--eq-badge-text: ' . esc_attr($settings['card_badge_text']);
+        }
+        if (!empty($settings['card_price_bg'])) {
+            $grid_inline_styles[] = '--eq-price-bg: ' . esc_attr($settings['card_price_bg']);
+        }
+        if (!empty($settings['card_price_text'])) {
+            $grid_inline_styles[] = '--eq-price-text: ' . esc_attr($settings['card_price_text']);
+        }
+
+        $grid_style_attr = implode('; ', $grid_inline_styles) . ';';
+
         ob_start();
         ?>
         <div class="evonee-landing evonee-grid-only">
@@ -1212,7 +1260,7 @@ class Evonee_Quote_Modal {
                         <div class="el-title-line"></div>
                     <?php endif; ?>
 
-                    <div class="el-grid" style="--eq-cols-desktop: <?php echo esc_attr($cols_desktop); ?>; --eq-cols-tablet: <?php echo esc_attr($cols_tablet); ?>; --eq-cols-mobile: <?php echo esc_attr($cols_mobile); ?>; --eq-grid-gap: <?php echo esc_attr($gap); ?>; --eq-img-height: <?php echo esc_attr($img_height); ?>; --eq-img-fit: <?php echo esc_attr($img_fit); ?>;">
+                    <div class="el-grid" style="<?php echo esc_attr($grid_style_attr); ?>">
                         <?php foreach ($products as $p): 
                             $img_src = !empty($p['img']) ? esc_url($p['img']) : $placeholder;
                         ?>
