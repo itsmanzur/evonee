@@ -4006,9 +4006,24 @@ class Evonee_Quote_Admin {
             $updated['enable_auto_reply']      = isset($_POST['enable_auto_reply']) ? '1' : '0';
             $updated['enable_deposit_payment'] = isset($_POST['enable_deposit_payment']) ? '1' : '0';
 
+            if (!empty($_POST['preset_industry'])) {
+                $industry = sanitize_text_field(wp_unslash($_POST['preset_industry']));
+                if ($industry === 'b2b') {
+                    $updated['enable_woocommerce_button'] = '1';
+                    $updated['enable_wc_quote_only']      = '1';
+                    $updated['wc_hide_price']             = '1';
+                    $updated['enable_tiered_pricing']     = '1';
+                } elseif ($industry === 'merch') {
+                    $updated['enable_tiered_pricing']     = '1';
+                    $updated['show_products_title']       = '1';
+                } elseif ($industry === 'rental') {
+                    $updated['enable_call_booking']       = '1';
+                }
+            }
+
             update_option('evonee_quote_settings', $updated);
             $settings = $updated;
-            $message  = 'Setup complete! Your Evonee Quotes plugin is now configured.';
+            $message  = 'Setup complete! Your Evonee Quotes plugin is now configured for ' . esc_html(ucfirst($industry ?? 'your store')) . '.';
         }
         ?>
         <div class="wrap evonee-admin-wrap" style="max-width:900px; margin:40px auto;">

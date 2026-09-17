@@ -677,4 +677,165 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
     }
+
+    // --- RFQ DYNAMIC QUOTE BASKET (Phase 1) ---
+    const BASKET_KEY = 'evonee_rfq_basket_v1';
+    const basketTrigger = document.getElementById('eq-rfq-basket-trigger');
+    const basketBadge = document.getElementById('eq-rfq-basket-badge');
+    const drawerOverlay = document.getElementById('eq-rfq-drawer-overlay');
+    const drawer = document.getElementById('eq-rfq-drawer');
+    const drawerClose = document.getElementById('eq-rfq-drawer-close');
+    const drawerBody = document.getElementById('eq-rfq-drawer-body');
+    const totalCountSpan = document.getElementById('eq-rfq-total-count');
+    const proceedBtn = document.getElementById('eq-rfq-btn-proceed');
+
+    function getBasket() {
+        try {
+            return JSON.parse(localStorage.getItem(BASKET_KEY)) || [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function saveBasket(items) {
+        localStorage.setItem(BASKET_KEY, JSON.stringify(items));
+        renderBasket();
+    }
+
+    function renderBasket() {
+        const items = getBasket();
+        let totalQty = 0;
+        items.forEach(item => totalQty += (item.qty || 1));
+
+        if (basketBadge) basketBadge.textContent = totalQty;
+        if (totalCountSpan) totalCountSpan.textContent = totalQty;
+
+        if (!drawerBody) return;
+
+        if (items.length === 0) {
+            drawerBody.innerHTML = `
+                <div class="eq-rfq-empty-basket">
+                    <p style="font-size:15px; font-weight:700; color:#475569; margin-bottom:4px;">Your Quote Basket is empty.</p>
+                    <small style="color:#94a3b8;">Browse products and click "Add to Quote Basket" to request a bulk quote.</small>
+                </div>
+            `;
+            if (proceedBtn) proceedBtn.disabled = true;
+            return;
+        }
+
+        if (proceedBtn) proceedBtn.disabled = false;
+
+        let html = '';
+        items.forEach((item, index) => {
+            const img = item.image || 'https://via.placeholder.com/80';
+            html += `
+                <div class="eq-rfq-item" data-index="${index}">
+                    <img src="${img}" class="eq-rfq-item-img" alt="${item.name}">
+                    <div class="eq-rfq-item-details">
+                        <h4 class="eq-rfq-item-title">${item.name}</h4>
+                        <div class="eq-rfq-item-qty">
+                            <button type="button" class="eq-rfq-qty-btn eq-rfq-minus" data-index="${index}">-</button>
+                            <span style="font-weight:700; color:#0f172a;">${item.qty} pcs</span>
+                            <button type="button" class="eq-rfq-qty-btn eq-rfq-plus" data-index="${index}">+</button>
+                        </div>
+                    </div>
+                    <button type="button" class="eq-rfq-item-remove" data-index="${index}" title="Remove item">&times;</button>
+                </div>
+            `;
+        });
+        drawerBody.innerHTML = html;
+    }
+
+    function toggleDrawer(open) {
+        if (!drawer || !drawerOverlay) return;
+        if (open) {
+            drawer.classList.add('eq-drawer--active');
+            drawerOverlay.classList.add('eq-drawer--active');
+            renderBasket();
+        } else {
+            drawer.classList.remove('eq-drawer--active');
+            drawerOverlay.classList.remove('eq-drawer--active');
+        }
+    }
+
+    if (basketTrigger) {
+        basketTrigger.addEventListener('click', function () {
+            toggleDrawer(true);
+        });
+    }
+    if (drawerClose) {
+        drawerClose.addEventListener('click', function () {
+            toggleDrawer(false);
+        });
+    }
+    if (drawerOverlay) {
+        drawerOverlay.addEventListener('click', function () {
+            toggleDrawer(false);
+        });
+    }
+
+    // Add to Basket Click Handler
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('.eq-add-to-basket-btn');
+        if (!btn) return;
+        e.preventDefault();
+
+        const name = btn.getAttribute('data-product') || 'Custom Product';
+        const image = btn.getAttribute('data-image') || '';
+        const desc = btn.getAttribute('data-description') || '';
+
+        const items = getBasket();
+        const existing = items.find(i => i.name === name);
+        if (existing) {
+            existing.qty = (existing.qty || 1) + 1;
+        } else {
+            items.push({ name: name, image: image, desc: desc, qty: 1 });
+        }
+        saveBasket(items);
+
+        // Open Drawer
+        toggleDrawer(true);
+    });
+
+    // Quantity & Delete Delegate in Drawer
+    if (drawerBody) {
+        drawerBody.addEventListener('click', function (e) {
+            const items = getBasket();
+            if (e.target.classList.contains('eq-rfq-plus')) {
+                const idx = parseInt(e.target.getAttribute('data-index'));
+                if (items[idx]) {
+                    items[idx].qty = (items[idx].qty || 1) + 1;
+                    saveBasket(items);
+                }
+            } else if (e.target.classList.contains('eq-rfq-minus')) {
+                const idx = parseInt(e.target.getAttribute('data-index'));
+                if (items[idx]) {
+                    items[idx].qty = Math.max(1, (items[idx].qty || 1) - 1);
+                    saveBasket(items);
+                }
+            } else if (e.target.classList.contains('eq-rfq-item-remove')) {
+                const idx = parseInt(e.target.getAttribute('data-index'));
+                items.splice(idx, 1);
+                saveBasket(items);
+            }
+        });
+    }
+
+    // Proceed to Bulk Quote Submission from Drawer
+    if (proceedBtn) {
+        proceedBtn.addEventListener('click', function () {
+            const items = getBasket();
+            if (items.length === 0) return;
+
+            toggleDrawer(false);
+
+            const summaryList = items.map(i => `${i.name} (x${i.qty})`).join(', ');
+            const bulkTitle = `Bulk Quote Request (${items.length} Products)`;
+            const bulkDesc = `Basket Items: ${summaryList}`;
+
+            openModal(bulkTitle, items[0].image || '', bulkDesc);
+        });
+    }
+
+    renderBasket();
 });

@@ -508,6 +508,35 @@ class Evonee_Quote_Modal {
         // Load plugin settings for conditional field rendering
         $settings = Evonee_Quote_Admin::get_settings();
         ?>
+        <!-- Floating RFQ Quote Basket Trigger Widget -->
+        <div id="eq-rfq-basket-trigger" class="eq-rfq-basket-trigger" role="button" title="View Quote Basket">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+            <span>Quote Basket</span>
+            <span id="eq-rfq-basket-badge" class="eq-rfq-basket-badge">0</span>
+        </div>
+
+        <!-- Slide-out RFQ Basket Drawer -->
+        <div id="eq-rfq-drawer-overlay" class="eq-rfq-drawer-overlay"></div>
+        <div id="eq-rfq-drawer" class="eq-rfq-drawer">
+            <div class="eq-rfq-drawer-header">
+                <h3>🛒 Your Quote Basket</h3>
+                <button type="button" id="eq-rfq-drawer-close" class="eq-rfq-drawer-close">&times;</button>
+            </div>
+            <div id="eq-rfq-drawer-body" class="eq-rfq-drawer-body">
+                <div class="eq-rfq-empty-basket">
+                    <p>Your Quote Basket is empty.</p>
+                    <small>Browse products and click "Add to Quote Basket" to request a bulk quote.</small>
+                </div>
+            </div>
+            <div class="eq-rfq-drawer-footer">
+                <div class="eq-rfq-summary-line">
+                    <span>Total Items:</span>
+                    <span id="eq-rfq-total-count">0</span>
+                </div>
+                <button type="button" id="eq-rfq-btn-proceed" class="eq-rfq-btn-proceed">Request Quote for All Items &rarr;</button>
+            </div>
+        </div>
+
         <div id="eq-quote-modal" class="eq-modal" aria-hidden="true">
             <div class="eq-modal-overlay"></div>
             
