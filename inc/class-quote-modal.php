@@ -292,7 +292,7 @@ class Evonee_Quote_Modal {
      * Shortcode: [evonee_customer_portal] (Phase 3.1)
      * Renders front-end customer quote history portal
      */
-    public function render_customer_portal($atts) {
+    public static function render_customer_portal($atts = []) {
         global $wpdb;
         $current_user = wp_get_current_user();
         $user_email   = is_user_logged_in() ? $current_user->user_email : '';
@@ -1145,7 +1145,7 @@ class Evonee_Quote_Modal {
     /**
      * Render Popular Products Grid with Customizable Columns & Responsive Controls
      */
-    public function render_products_grid($atts = []) {
+    public static function render_products_grid($atts = []) {
         $settings = Evonee_Quote_Admin::get_settings();
 
         $atts = shortcode_atts([
@@ -1271,7 +1271,7 @@ class Evonee_Quote_Modal {
     /**
      * Optional full demo landing page renderer
      */
-    public function render_full_landing_page() {
+    public static function render_full_landing_page() {
         ob_start();
         ?>
         <div class="evonee-landing">
