@@ -1159,6 +1159,9 @@ class Evonee_Quote_Modal {
             'img_height'  => '140px',
             'img_fit'     => 'cover',
             'limit'       => '',
+            'card_style'  => '',
+            'badge'       => '',
+            'show_price'  => '',
         ], $atts);
 
         // Allow 'columns' or 'cols'
@@ -1168,6 +1171,16 @@ class Evonee_Quote_Modal {
         $gap          = esc_attr($atts['gap']);
         $img_height   = esc_attr($atts['img_height']);
         $img_fit      = esc_attr($atts['img_fit']);
+
+        $default_style = !empty($settings['default_card_style']) ? $settings['default_card_style'] : 'classic';
+        $card_style    = !empty($atts['card_style']) ? sanitize_html_class($atts['card_style']) : $default_style;
+        $allowed_styles= ['classic', 'floating', 'compact', 'gradient', 'horizontal', 'dark'];
+        if (!in_array($card_style, $allowed_styles, true)) {
+            $card_style = 'classic';
+        }
+
+        $badge_text = !empty($atts['badge']) ? sanitize_text_field($atts['badge']) : '';
+        $show_price = ($atts['show_price'] === '1' || $atts['show_price'] === 'yes');
 
         if ($atts['limit'] !== '' && $atts['limit'] !== null) {
             $limit = intval($atts['limit']);
@@ -1203,22 +1216,48 @@ class Evonee_Quote_Modal {
                         <?php foreach ($products as $p): 
                             $img_src = !empty($p['img']) ? esc_url($p['img']) : $placeholder;
                         ?>
-                            <div class="el-card eq-trigger" 
+                            <div class="el-card el-card--<?php echo esc_attr($card_style); ?> eq-trigger" 
                                  data-product="<?php echo esc_attr($p['name']); ?>" 
                                  data-image="<?php echo esc_url($img_src); ?>" 
                                  data-description="<?php echo esc_attr($p['desc']); ?>"
                                  role="button" 
                                  tabindex="0"
                                  title="Click to get quote for <?php echo esc_attr($p['name']); ?>">
+                                
+                                <?php if (!empty($badge_text)): ?>
+                                    <span class="el-card-badge"><?php echo esc_html($badge_text); ?></span>
+                                <?php endif; ?>
+
                                 <div class="el-card-img">
                                     <img src="<?php echo esc_url($img_src); ?>" alt="<?php echo esc_attr($p['name']); ?>" loading="lazy" onerror="this.onerror=null;this.src='<?php echo esc_url($placeholder); ?>';">
                                 </div>
-                                <h3 class="el-card-title"><?php echo esc_html($p['name']); ?></h3>
-                                <div class="el-card-action">
-                                    <span class="el-btn-card">
-                                        Get Quote <span class="eq-arrow">&rarr;</span>
-                                    </span>
-                                </div>
+
+                                <?php if ($card_style === 'horizontal'): ?>
+                                    <div class="el-card--horizontal-content">
+                                        <h3 class="el-card-title"><?php echo esc_html($p['name']); ?></h3>
+                                        <?php if (!empty($p['desc'])): ?>
+                                            <div class="el-card-desc"><?php echo esc_html($p['desc']); ?></div>
+                                        <?php endif; ?>
+                                        <?php if ($show_price): ?>
+                                            <span class="el-card-price-tag">From $1.25 / pc</span>
+                                        <?php endif; ?>
+                                        <div class="el-card-action">
+                                            <span class="el-btn-card">
+                                                Get Quote <span class="eq-arrow">&rarr;</span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                <?php else: ?>
+                                    <h3 class="el-card-title"><?php echo esc_html($p['name']); ?></h3>
+                                    <?php if ($show_price): ?>
+                                        <span class="el-card-price-tag">From $1.25 / pc</span>
+                                    <?php endif; ?>
+                                    <div class="el-card-action">
+                                        <span class="el-btn-card">
+                                            Get Quote <span class="eq-arrow">&rarr;</span>
+                                        </span>
+                                    </div>
+                                <?php endif; ?>
                             </div>
                         <?php endforeach; ?>
                     </div>

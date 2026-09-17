@@ -58,10 +58,13 @@ add_action('plugins_loaded', function() {
     }
 });
 
-// Register Elementor Widget (Phase 2.3)
+// Register Elementor Widgets (Phase 2.3 & Card Variations)
 add_action('elementor/widgets/register', function($widgets_manager) {
     if (class_exists('Evonee_Elementor_Quote_Button_Widget')) {
         $widgets_manager->register(new \Evonee_Elementor_Quote_Button_Widget());
+    }
+    if (class_exists('Evonee_Elementor_Product_Grid_Widget')) {
+        $widgets_manager->register(new \Evonee_Elementor_Product_Grid_Widget());
     }
 });
 

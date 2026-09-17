@@ -399,6 +399,183 @@
     transform: translateX(4px) !important;
 }
 
+/* ==========================================================================
+   Card Design Variations (6 Style Modifiers)
+   ========================================================================== */
+
+/* 1. Classic Soft Pill (Default) */
+.el-card--classic {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 16px !important;
+}
+
+/* 2. Modern Floating (Elevated Shadow & Badge) */
+.el-card--floating {
+    background: #ffffff !important;
+    border: 1px solid #f1f5f9 !important;
+    border-radius: 18px !important;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 4px 10px -2px rgba(0, 0, 0, 0.02) !important;
+}
+.el-card--floating:hover {
+    box-shadow: 0 22px 35px -8px rgba(109, 40, 217, 0.18), 0 8px 12px -4px rgba(0, 0, 0, 0.04) !important;
+    border-color: #c4b5fd !important;
+}
+
+/* Floating Badge */
+.el-card-badge {
+    position: absolute !important;
+    top: 12px !important;
+    right: 12px !important;
+    background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important;
+    color: #ffffff !important;
+    font-size: 10px !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    padding: 3px 9px !important;
+    border-radius: 20px !important;
+    box-shadow: 0 4px 10px rgba(124, 58, 237, 0.3) !important;
+    z-index: 5 !important;
+}
+
+/* Price Tag */
+.el-card-price-tag {
+    font-size: 11.5px !important;
+    font-weight: 700 !important;
+    color: #16a34a !important;
+    background: #f0fdf4 !important;
+    border: 1px solid #bbf7d0 !important;
+    border-radius: 12px !important;
+    padding: 2px 8px !important;
+    margin-bottom: 8px !important;
+    display: inline-block !important;
+}
+
+/* 3. E-commerce Compact */
+.el-card--compact {
+    padding: 14px 10px 14px !important;
+    min-height: 210px !important;
+    border-radius: 12px !important;
+    border: 1px solid #cbd5e1 !important;
+}
+.el-card--compact .el-card-img {
+    height: 110px !important;
+    margin-bottom: 8px !important;
+}
+.el-card--compact .el-card-title {
+    font-size: 13.5px !important;
+    margin: 2px 0 6px !important;
+}
+.el-card--compact .el-btn-card {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 6px 12px !important;
+    font-size: 11.5px !important;
+    border-radius: 8px !important;
+    background: #0f172a !important;
+    color: #ffffff !important;
+}
+.el-card--compact:hover .el-btn-card {
+    background: #6d28d9 !important;
+}
+
+/* 4. Gradient Glass / Luxury Tech */
+.el-card--gradient {
+    background: linear-gradient(145deg, #ffffff 0%, #faf5ff 100%) !important;
+    border: 2px solid transparent !important;
+    background-clip: padding-box !important;
+    border-radius: 18px !important;
+    box-shadow: 0 8px 24px rgba(109, 40, 217, 0.08) !important;
+    position: relative !important;
+}
+.el-card--gradient::after {
+    content: '' !important;
+    position: absolute !important;
+    inset: -2px !important;
+    border-radius: 18px !important;
+    background: linear-gradient(135deg, #8b5cf6, #ec4899, #3b82f6) !important;
+    z-index: -1 !important;
+    opacity: 0.4 !important;
+    transition: opacity 0.3s ease !important;
+}
+.el-card--gradient:hover::after {
+    opacity: 1 !important;
+}
+.el-card--gradient .el-btn-card {
+    background: linear-gradient(135deg, #6d28d9 0%, #9333ea 100%) !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 14px rgba(109, 40, 217, 0.35) !important;
+}
+
+/* 5. Horizontal Split (List Layout) */
+.el-card--horizontal {
+    flex-direction: row !important;
+    align-items: center !important;
+    text-align: left !important;
+    padding: 16px 20px !important;
+    min-height: auto !important;
+    gap: 20px !important;
+    border-radius: 14px !important;
+}
+.el-card--horizontal .el-card-img {
+    width: 140px !important;
+    height: 110px !important;
+    margin-bottom: 0 !important;
+    flex-shrink: 0 !important;
+}
+.el-card--horizontal-content {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+}
+.el-card--horizontal .el-card-title {
+    text-align: left !important;
+    font-size: 16px !important;
+    margin: 0 0 6px !important;
+}
+.el-card--horizontal .el-card-desc {
+    font-size: 12.5px !important;
+    color: #64748b !important;
+    margin-bottom: 10px !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
+    overflow: hidden !important;
+}
+.el-card--horizontal .el-card-action {
+    justify-content: flex-start !important;
+    width: auto !important;
+    margin-top: 0 !important;
+}
+
+/* 6. Dark Sleek Edition */
+.el-card--dark {
+    background: #0f172a !important;
+    border: 1px solid #1e293b !important;
+    border-radius: 16px !important;
+}
+.el-card--dark .el-card-img {
+    background: #1e293b !important;
+}
+.el-card--dark .el-card-title {
+    color: #f8fafc !important;
+}
+.el-card--dark .el-btn-card {
+    background: #1e293b !important;
+    color: #c084fc !important;
+    border-color: #3b0764 !important;
+}
+.el-card--dark:hover {
+    border-color: #a855f7 !important;
+    box-shadow: 0 15px 30px rgba(168, 85, 247, 0.25) !important;
+}
+.el-card--dark:hover .el-btn-card {
+    background: #9333ea !important;
+    color: #ffffff !important;
+}
+
 /* Custom Banner */
 .el-custom-banner-wrap {
     padding: 20px 0 60px;
