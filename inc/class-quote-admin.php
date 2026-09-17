@@ -2066,14 +2066,19 @@ class Evonee_Quote_Admin {
                                             <td><code>Evonee Quotes ➔ Settings</code></td>
                                         </tr>
                                         <tr>
-                                            <td><strong>🛡️ Module 8 — Security & UX</strong></td>
-                                            <td>Nonce verification on all AJAX/Chat endpoints, XSS-safe E-Signature canvas, Google reCAPTCHA v3, Multi-file Upload, LocalStorage Form Draft Auto-Resume.</td>
-                                            <td><code>Evonee Quotes ➔ Settings</code></td>
+                                            <td><strong>🛒 Module 10 — RFQ Dynamic Quote Basket</strong></td>
+                                            <td>Floating Quote Basket button, slide-out side drawer with live quantity adjusters, and 1-click bulk quote request submission.</td>
+                                            <td>Site-wide Floating Widget & WooCommerce Product Pages</td>
                                         </tr>
                                         <tr>
-                                            <td><strong>⏰ Module 9 — Automations & Cleanup</strong></td>
-                                            <td>Daily WP-Cron background task for automated expiry reminders, weekly digest, and standard WordPress <code>uninstall.php</code> data cleanup option.</td>
-                                            <td><code>Evonee Quotes ➔ Settings</code> & Background Cron</td>
+                                            <td><strong>⚡ Module 11 — 1-Minute Setup Wizard</strong></td>
+                                            <td>Guided 3-step onboarding wizard with presets for Custom Printing, B2B Wholesale, Equipment Rental, and Professional Services.</td>
+                                            <td><code>Evonee Quotes ➔ ⚡ Setup Wizard</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>🎨 Module 12 — Brand Colors Customizer</strong></td>
+                                            <td>Full color customization for Product Grid cards in Elementor Style tab (`Brand Colors & Styling`) and Admin settings.</td>
+                                            <td><code>Evonee Quotes ➔ Settings</code> & Elementor Editor</td>
                                         </tr>
                                     </tbody>
                                 </table>
