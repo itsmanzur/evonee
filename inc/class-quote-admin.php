@@ -500,7 +500,18 @@ class Evonee_Quote_Admin {
                     </span>
                 </div>
                 <div class="evonee-card-body" style="padding:20px;">
-                    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; text-align:center; margin-bottom:18px;">
+                    <?php
+                    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+                    $avg_resp_sec = (int) $wpdb->get_var("SELECT AVG(response_time_seconds) FROM {$wpdb->prefix}eq_quote_submissions WHERE response_time_seconds IS NOT NULL AND response_time_seconds > 0");
+                    if ($avg_resp_sec > 0) {
+                        $hrs  = floor($avg_resp_sec / 3600);
+                        $mins = round(($avg_resp_sec % 3600) / 60);
+                        $resp_time_str = ($hrs > 0) ? "{$hrs}h {$mins}m" : "{$mins} mins";
+                    } else {
+                        $resp_time_str = "⚡ <15 mins";
+                    }
+                    ?>
+                    <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:12px; text-align:center; margin-bottom:18px;">
                         <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px;">
                             <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">1. New Requests</span>
                             <div style="font-size:20px; font-weight:800; color:#16a34a; margin-top:4px;"><?php echo esc_html($new_count); ?></div>
@@ -516,6 +527,10 @@ class Evonee_Quote_Admin {
                         <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px;">
                             <span style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">4. Pipeline Value</span>
                             <div style="font-size:20px; font-weight:800; color:#059669; margin-top:4px;"><?php echo esc_html($curr_sym) . esc_html(number_format($total_pipeline_val, 2)); ?></div>
+                        </div>
+                        <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; padding:12px;">
+                            <span style="font-size:11px; font-weight:700; color:#166534; text-transform:uppercase;">5. Avg Lead Velocity</span>
+                            <div style="font-size:18px; font-weight:800; color:#15803d; margin-top:4px;"><?php echo esc_html($resp_time_str); ?></div>
                         </div>
                     </div>
 
@@ -1233,6 +1248,8 @@ class Evonee_Quote_Admin {
                             <button type="submit" class="button">Search</button>
                         </div>
 
+                        <button type="button" id="eq-run-drip-btn" class="button" style="background:#faf5ff; border-color:#d8b4fe; color:#6d28d9; font-weight:700; height:30px;">⏰ Run Drip Engine</button>
+
                         <?php if (!empty($search) || !empty($status_filter) || !empty($date_range)): ?>
                             <a href="<?php echo esc_url(admin_url('admin.php?page=evonee-submissions')); ?>" class="button button-link-delete">Reset Filters</a>
                         <?php endif; ?>
@@ -1477,10 +1494,11 @@ class Evonee_Quote_Admin {
                         <span id="eq-followup-msg" style="font-size:11px; color:#166534; display:none;">Saved!</span>
                     </div>
                     <div>
-                        <label style="font-size:12px; font-weight:700; color:#1e40af; display:block; margin-bottom:4px;">💰 Quoted Price Offer ($):</label>
-                        <div style="display:flex; gap:6px;">
-                            <input type="number" step="0.01" id="eq-quoted-price-input" placeholder="e.g. 250.00" style="font-size:12px; padding:4px 8px; border:1px solid #bfdbfe; border-radius:4px; width:120px;">
-                            <button type="button" id="eq-save-price-btn" class="button button-small button-primary" style="background:#2563eb; border-color:#2563eb;">Save Price</button>
+                        <label style="font-size:12px; font-weight:700; color:#1e40af; display:block; margin-bottom:4px;">💰 Price ($) & Deposit (%):</label>
+                        <div style="display:flex; gap:6px; align-items:center;">
+                            <input type="number" step="0.01" id="eq-quoted-price-input" placeholder="Price $" style="font-size:12px; padding:4px 8px; border:1px solid #bfdbfe; border-radius:4px; width:90px;">
+                            <input type="number" step="1" min="0" max="100" id="eq-deposit-percent-input" placeholder="Dep %" style="font-size:12px; padding:4px 8px; border:1px solid #bfdbfe; border-radius:4px; width:60px;">
+                            <button type="button" id="eq-save-price-btn" class="button button-small button-primary" style="background:#2563eb; border-color:#2563eb;">Save Offer</button>
                         </div>
                         <span id="eq-price-msg" style="font-size:11px; color:#2563eb; display:none;">Saved!</span>
                     </div>
@@ -1555,6 +1573,15 @@ class Evonee_Quote_Admin {
                     <div style="margin-bottom: 12px;">
                         <label style="font-weight:700; display:block; margin-bottom:4px;">Customer Email:</label>
                         <input type="email" name="customer_email" id="eq-reply-email" class="widefat" readonly required style="background:#f8fafc;">
+                    </div>
+
+                    <!-- AI Smart Reply Drafter Bar -->
+                    <div style="margin-bottom:12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:10px 12px; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <strong style="font-size:12px; color:#15803d;">🤖 Smart AI Sales Assistant:</strong>
+                            <span style="font-size:11.5px; color:#166534; display:block;">Generate an instant, customized quote offer & proposal.</span>
+                        </div>
+                        <button type="button" id="eq-ai-reply-btn" class="button button-primary" style="background:#16a34a; border-color:#16a34a; font-weight:700;">🤖 AI Draft Reply</button>
                     </div>
 
                     <?php
@@ -1664,11 +1691,13 @@ class Evonee_Quote_Admin {
                         if (notesSavedMsg) notesSavedMsg.style.display = 'none';
                     }
 
-                    // Load follow-up date & offer price
+                    // Load follow-up date & offer price & deposit percent
                     const followupInput = document.getElementById('eq-followup-date-input');
                     const priceInput    = document.getElementById('eq-quoted-price-input');
+                    const depositInput  = document.getElementById('eq-deposit-percent-input');
                     if (followupInput) followupInput.value = row.follow_up_date || '';
                     if (priceInput) priceInput.value = row.quoted_price || '';
+                    if (depositInput) depositInput.value = row.deposit_percent || '';
 
                     // Fetch Activity Log & Email Log
                     const actBody   = document.getElementById('eq-activity-log-body');
@@ -1707,7 +1736,7 @@ class Evonee_Quote_Admin {
                                 <p><strong>Specific Need Date:</strong> ${escapeHtml(row.specific_date || 'N/A')}</p>
                                 <p><strong>Submitted Date:</strong> ${escapeHtml(row.created_at)}</p>
                                 <p><strong>Estimated System Price:</strong> <strong style="color:#2563eb;">${row.estimated_total ? '$' + parseFloat(row.estimated_total).toFixed(2) : 'Under Review'}</strong></p>
-                                <p><strong>Quoted Price Offer:</strong> <strong style="color:#16a34a;">${row.quoted_price ? '$' + parseFloat(row.quoted_price).toFixed(2) : 'Not Set'}</strong></p>
+                                <p><strong>Quoted Price Offer:</strong> <strong style="color:#16a34a;">${row.quoted_price ? '$' + parseFloat(row.quoted_price).toFixed(2) : 'Not Set'}</strong> ${row.deposit_percent > 0 ? `<small style="color:#2563eb;">(${row.deposit_percent}% Deposit Required)</small>` : ''}</p>
                                 <p><strong>Current Status:</strong> <strong style="text-transform:uppercase; color:#6d28d9;">${escapeHtml(row.status || 'NEW')}</strong></p>
                                 <p style="margin-top: 10px;">
                                     <a href="admin-ajax.php?action=eq_download_pdf&id=${row.id}" target="_blank" class="button button-secondary" style="background:#f1f5f9; border-color:#cbd5e1; color:#334155; font-weight:600;">📄 Download PDF Quote Sheet</a>
@@ -1917,13 +1946,14 @@ class Evonee_Quote_Admin {
                 });
             }
 
-            // Save Quoted Price Offer via AJAX
+            // Save Quoted Price Offer & Deposit % via AJAX
             const savePriceBtn = document.getElementById('eq-save-price-btn');
             const priceMsg    = document.getElementById('eq-price-msg');
             if (savePriceBtn) {
                 savePriceBtn.addEventListener('click', function() {
                     if (!currentDetailId) return;
                     const priceVal = document.getElementById('eq-quoted-price-input')?.value || 0;
+                    const depVal   = document.getElementById('eq-deposit-percent-input')?.value || 0;
                     savePriceBtn.disabled = true;
 
                     const fd = new FormData();
@@ -1931,6 +1961,7 @@ class Evonee_Quote_Admin {
                     fd.append('nonce', '<?php echo esc_js(wp_create_nonce('eq_save_price_offer_nonce')); ?>');
                     fd.append('submission_id', currentDetailId);
                     fd.append('quoted_price', priceVal);
+                    fd.append('deposit_percent', depVal);
 
                     fetch('<?php echo esc_url(admin_url('admin-ajax.php')); ?>', { method: 'POST', body: fd })
                         .then(r => r.json())
@@ -1943,11 +1974,61 @@ class Evonee_Quote_Admin {
                                 if (tr) {
                                     const rowData = JSON.parse(tr.getAttribute('data-row'));
                                     rowData.quoted_price = priceVal;
+                                    rowData.deposit_percent = depVal;
                                     tr.setAttribute('data-row', JSON.stringify(rowData));
                                 }
                             }
                         })
                         .catch(() => { savePriceBtn.disabled = false; });
+                });
+            }
+
+            // 🤖 AI Smart Reply Drafter Handler
+            const aiReplyBtn = document.getElementById('eq-ai-reply-btn');
+            if (aiReplyBtn) {
+                aiReplyBtn.addEventListener('click', function() {
+                    let subId = currentDetailId;
+                    if (!subId) {
+                        subId = document.getElementById('eq-reply-sub-id')?.value;
+                    }
+                    if (!subId) {
+                        alert('Please open a quote detail drawer first.');
+                        return;
+                    }
+
+                    aiReplyBtn.disabled = true;
+                    aiReplyBtn.textContent = '🤖 Generating AI Draft...';
+
+                    const fd = new FormData();
+                    fd.append('action', 'eq_ai_generate_reply');
+                    fd.append('nonce', '<?php echo esc_js(wp_create_nonce('eq_admin_nonce')); ?>');
+                    fd.append('submission_id', subId);
+
+                    fetch('<?php echo esc_url(admin_url('admin-ajax.php')); ?>', { method: 'POST', body: fd })
+                        .then(r => r.json())
+                        .then(data => {
+                            aiReplyBtn.disabled = false;
+                            aiReplyBtn.textContent = '🤖 AI Draft Reply';
+                            if (data.success && data.data) {
+                                const subjInp  = document.getElementById('eq-reply-subject');
+                                const bodyInp  = document.getElementById('eq-reply-body');
+                                const priceInp = document.getElementById('eq-quoted-price-input');
+                                const depInp   = document.getElementById('eq-deposit-percent-input');
+
+                                if (subjInp) subjInp.value = data.data.reply_subject || '';
+                                if (bodyInp) bodyInp.value = data.data.reply_body || '';
+                                if (priceInp && data.data.suggested_price) priceInp.value = data.data.suggested_price;
+                                if (depInp && data.data.suggested_deposit_percent) depInp.value = data.data.suggested_deposit_percent;
+
+                                alert('✨ AI Smart Reply Proposal generated successfully!');
+                            } else {
+                                alert('Failed to generate AI reply: ' + (data.data?.message || 'Unknown error'));
+                            }
+                        })
+                        .catch(() => {
+                            aiReplyBtn.disabled = false;
+                            aiReplyBtn.textContent = '🤖 AI Draft Reply';
+                        });
                 });
             }
 
@@ -1982,6 +2063,32 @@ class Evonee_Quote_Admin {
                             convertWcBtn.disabled = false;
                             convertWcBtn.textContent = '🛒 Convert to WC Order';
                             alert('An unexpected error occurred.');
+                        });
+                });
+            // ⏰ Run Drip Engine Manual Launcher
+            const runDripBtn = document.getElementById('eq-run-drip-btn');
+            if (runDripBtn) {
+                runDripBtn.addEventListener('click', function() {
+                    runDripBtn.disabled = true;
+                    runDripBtn.textContent = '⏳ Executing...';
+                    const fd = new FormData();
+                    fd.append('action', 'eq_run_drip_engine');
+                    fd.append('nonce', '<?php echo esc_js(wp_create_nonce('eq_admin_nonce')); ?>');
+
+                    fetch('<?php echo esc_url(admin_url('admin-ajax.php')); ?>', { method: 'POST', body: fd })
+                        .then(r => r.json())
+                        .then(data => {
+                            runDripBtn.disabled = false;
+                            runDripBtn.textContent = '⏰ Run Drip Engine';
+                            if (data.success && data.data) {
+                                alert('✅ ' + data.data.message);
+                            } else {
+                                alert('Failed to execute drip engine.');
+                            }
+                        })
+                        .catch(() => {
+                            runDripBtn.disabled = false;
+                            runDripBtn.textContent = '⏰ Run Drip Engine';
                         });
                 });
             }
@@ -2180,6 +2287,21 @@ class Evonee_Quote_Admin {
                                             <td><strong>🎨 Module 12 — Brand Colors Customizer</strong></td>
                                             <td>Full color customization for Product Grid cards in Elementor Style tab (`Brand Colors & Styling`) and Admin settings.</td>
                                             <td><code>Evonee Quotes ➔ Settings</code> & Elementor Editor</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>🤖 Module 13 — AI Smart Reply Drafter</strong></td>
+                                            <td>1-click AI response drafter inside submission detail drawer, generating tailored quote offers based on product specs, quantity, and lead time.</td>
+                                            <td><code>Submissions Drawer ➔ 🤖 AI Draft Reply</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>⏰ Module 14 — Automated Email Drip Engine</strong></td>
+                                            <td>Automated 2-stage follow-up sequence (Day 2 check-in & Day 5 expiration/discount urgency) via daily WP-Cron and 1-click manual trigger.</td>
+                                            <td><code>Submissions Page ➔ ⏰ Run Drip Engine</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>💵 Module 15 — Partial Deposit & Response Velocity Analytics</strong></td>
+                                            <td>Flexible deposit percentage options (e.g. 20% or 50% upfront) and lead response speed tracker in Executive Dashboard.</td>
+                                            <td><code>Submissions Drawer & Executive Dashboard</code></td>
                                         </tr>
                                     </tbody>
                                 </table>

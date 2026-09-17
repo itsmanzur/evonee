@@ -402,4 +402,71 @@ class Evonee_Quote_Mailer {
 
         return wp_mail($sales_email, $subject, $body, $headers);
     }
+
+    /**
+     * Send automated Drip Follow-up email sequence (Day 2 check-in & Day 5 urgency)
+     *
+     * @param object $quote
+     * @param int $level (1 = Day 2 Check-in, 2 = Day 5 Expiry & Discount)
+     * @return bool
+     */
+    public static function send_drip_followup($quote, $level = 1) {
+        if (empty($quote->email)) return false;
+
+        $settings   = Evonee_Quote_Admin::get_settings();
+        $brand_name = !empty($settings['email_brand_name']) ? esc_html($settings['email_brand_name']) : 'Evonee';
+        $sales_email= Evonee_Quote_Ajax::get_sales_email();
+
+        $token      = !empty($quote->acceptance_token) ? $quote->acceptance_token : '';
+        $accept_url = !empty($token) ? add_query_arg(['eq_action' => 'accept_quote', 'token' => $token], home_url()) : home_url();
+
+        if ($level === 1) {
+            $subject = sprintf('👋 Quick check-in regarding your %s quote (#%d)', $quote->product, $quote->id);
+            $heading = 'Quick Follow-up on Your Quote Request';
+            $intro   = sprintf('Hi <strong>%s</strong>,<br><br>I wanted to personally check in and see if you had a chance to review our custom quote offer for <strong>%s</strong>.', esc_html($quote->full_name), esc_html($quote->product));
+            $cta     = 'Review Your Quote & Proof';
+        } else {
+            $subject = sprintf('🔥 Final Call & Exclusive Discount: Quote #%d (%s)', $quote->id, $quote->product);
+            $heading = 'Exclusive Offer — Complete Your Order Today';
+            $intro   = sprintf('Hi <strong>%s</strong>,<br><br>Your custom quote for <strong>%s</strong> is set to expire soon. We would love to work with you on this project! Mention code <strong>EVONEE5</strong> when confirming to get an additional 5%% off your balance.', esc_html($quote->full_name), esc_html($quote->product));
+            $cta     = 'Claim Discount & Confirm Order';
+        }
+
+        $headers = [
+            'Content-Type: text/html; charset=UTF-8',
+            'From: ' . $brand_name . ' Sales <' . $sales_email . '>',
+            'Reply-To: ' . $sales_email
+        ];
+
+        $mail_body = '
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="UTF-8"></head>
+        <body style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif; background:#f8fafc; margin:0; padding:30px 15px;">
+            <div style="max-width:560px; margin:0 auto; background:#ffffff; border-radius:12px; border:1px solid #e2e8f0; overflow:hidden; box-shadow:0 4px 12px rgba(0,0,0,0.05);">
+                <div style="background:linear-gradient(135deg, #6d28d9 0%, #4c1d95 100%); padding:24px; text-align:center; color:#ffffff;">
+                    <h2 style="margin:0; font-size:20px; font-weight:700;">' . esc_html($heading) . '</h2>
+                </div>
+                <div style="padding:28px 24px; color:#334155; font-size:15px; line-height:1.6;">
+                    <p style="margin-top:0;">' . $intro . '</p>
+                    <div style="background:#f1f5f9; border-radius:8px; padding:16px; margin:20px 0;">
+                        <div style="font-size:13px; font-weight:700; color:#64748b; text-transform:uppercase; margin-bottom:6px;">Quote Details</div>
+                        <div style="font-size:14px; font-weight:600; color:#1e293b;">Product: ' . esc_html($quote->product) . '</div>
+                        <div style="font-size:14px; color:#475569;">Quantity: ' . number_format($quote->quantity) . ' units</div>
+                        ' . (!empty($quote->quoted_price) ? '<div style="font-size:15px; font-weight:700; color:#16a34a; margin-top:4px;">Total Quoted Price: $' . number_format($quote->quoted_price, 2) . '</div>' : '') . '
+                    </div>
+                    <div style="text-align:center; margin:30px 0 10px;">
+                        <a href="' . esc_url($accept_url) . '" style="background:#6d28d9; color:#ffffff; padding:12px 24px; border-radius:8px; font-weight:700; text-decoration:none; display:inline-block;">' . esc_html($cta) . ' &rarr;</a>
+                    </div>
+                </div>
+                <div style="background:#f8fafc; border-top:1px solid #e2e8f0; padding:16px; text-align:center; font-size:12px; color:#94a3b8;">
+                    Need help or custom modifications? Reply directly to this email or contact us at <a href="mailto:' . esc_attr($sales_email) . '" style="color:#6d28d9;">' . esc_html($sales_email) . '</a>
+                </div>
+            </div>
+        </body>
+        </html>';
+
+        return wp_mail($quote->email, $subject, $mail_body, $headers);
+    }
 }
+

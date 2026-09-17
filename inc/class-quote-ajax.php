@@ -32,6 +32,8 @@ class Evonee_Quote_Ajax {
         add_action('wp_ajax_eq_gdpr_erasure',         [$instance, 'handle_gdpr_erasure']);
         add_action('wp_ajax_nopriv_eq_gdpr_erasure',  [$instance, 'handle_gdpr_erasure']);
         add_action('wp_ajax_eq_export_activity_csv',  [$instance, 'handle_export_activity_csv']);
+        add_action('wp_ajax_eq_ai_generate_reply',    [$instance, 'handle_ai_generate_reply']);
+        add_action('wp_ajax_eq_run_drip_engine',      [$instance, 'handle_run_drip_engine']);
         add_action('rest_api_init',                   [$instance, 'register_rest_routes']);
     }
 
@@ -167,6 +169,8 @@ class Evonee_Quote_Ajax {
 
         $submission_id = isset($_POST['submission_id']) ? intval($_POST['submission_id']) : 0;
         $price         = isset($_POST['quoted_price']) ? floatval($_POST['quoted_price']) : 0.00;
+        $dep_pct       = isset($_POST['deposit_percent']) ? floatval($_POST['deposit_percent']) : 0.00;
+        $dep_amt       = round($price * ($dep_pct / 100), 2);
 
         if (!$submission_id) {
             wp_send_json_error(['message' => 'Invalid submission ID.']);
@@ -176,12 +180,38 @@ class Evonee_Quote_Ajax {
         $table_name = $wpdb->prefix . 'eq_quote_submissions';
         self::maybe_run_phase2_migrations();
 
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $quote = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table_name} WHERE id = %d", $submission_id));
+
+        $update_data = [
+            'quoted_price'   => $price,
+            'deposit_percent'=> $dep_pct,
+            'deposit_amount' => $dep_amt,
+            'status'         => 'quoted'
+        ];
+        $update_format = ['%f', '%f', '%f', '%s'];
+
+        if ($quote && empty($quote->response_time_seconds)) {
+            $created_ts = strtotime($quote->created_at);
+            if ($created_ts > 0) {
+                $update_data['response_time_seconds'] = max(1, time() - $created_ts);
+                $update_format[] = '%d';
+            }
+        }
+
+        if ($quote && empty($quote->acceptance_token)) {
+            $update_data['acceptance_token'] = wp_generate_password(32, false);
+            $update_data['token_expiry']     = gmdate('Y-m-d H:i:s', strtotime('+30 days'));
+            $update_format[] = '%s';
+            $update_format[] = '%s';
+        }
+
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         $updated = $wpdb->update(
             $table_name,
-            ['quoted_price' => $price],
-            ['id'           => $submission_id],
-            ['%f'],
+            $update_data,
+            ['id' => $submission_id],
+            $update_format,
             ['%d']
         );
 
@@ -189,7 +219,11 @@ class Evonee_Quote_Ajax {
             wp_send_json_error(['message' => 'Failed to save price offer.']);
         }
 
-        self::log_activity($submission_id, 'price_updated', 'Set price offer to $' . number_format($price, 2));
+        $notes = 'Set price offer to $' . number_format($price, 2);
+        if ($dep_pct > 0) {
+            $notes .= ' with ' . $dep_pct . '% deposit ($' . number_format($dep_amt, 2) . ')';
+        }
+        self::log_activity($submission_id, 'price_updated', $notes);
         wp_send_json_success(['message' => 'Price offer saved successfully.']);
     }
 
@@ -300,16 +334,74 @@ class Evonee_Quote_Ajax {
     }
 
     /**
-     * Daily WP-Cron: Automated Expiry Reminders & Token Cleanup (Phase 4.1)
+     * Daily WP-Cron: Automated Expiry Reminders, Drip Follow-ups & Token Cleanup
      */
     public static function run_daily_quote_cron() {
         global $wpdb;
-        $three_days_later = gmdate('Y-m-d H:i:s', strtotime('+3 days'));
-        $now              = gmdate('Y-m-d H:i:s');
+        self::maybe_run_phase2_migrations();
+        $now      = gmdate('Y-m-d H:i:s');
+        $day2_ago = gmdate('Y-m-d H:i:s', strtotime('-2 days'));
+        $day5_ago = gmdate('Y-m-d H:i:s', strtotime('-5 days'));
 
+        $day2_count = 0;
+        $day5_count = 0;
+        $sub_table  = $wpdb->prefix . 'eq_quote_submissions';
+
+        // 1. Stage 1 Drip: Day 2 Check-in Follow-up
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $drip1_quotes = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$sub_table} WHERE status = %s AND (drip_level IS NULL OR drip_level = 0) AND created_at <= %s",
+            'quoted',
+            $day2_ago
+        ));
+
+        if (!empty($drip1_quotes)) {
+            foreach ($drip1_quotes as $q) {
+                if (Evonee_Quote_Mailer::send_drip_followup($q, 1)) {
+                    $day2_count++;
+                    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+                    $wpdb->update(
+                        $sub_table,
+                        ['drip_level' => 1, 'drip_last_sent' => $now],
+                        ['id' => $q->id],
+                        ['%d', '%s'],
+                        ['%d']
+                    );
+                    self::log_activity($q->id, 'drip_followup_1', 'Automated Day 2 Drip Check-in email sent to customer.');
+                }
+            }
+        }
+
+        // 2. Stage 2 Drip: Day 5 Urgency & Discount Follow-up
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $drip2_quotes = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$sub_table} WHERE status = %s AND drip_level = 1 AND created_at <= %s",
+            'quoted',
+            $day5_ago
+        ));
+
+        if (!empty($drip2_quotes)) {
+            foreach ($drip2_quotes as $q) {
+                if (Evonee_Quote_Mailer::send_drip_followup($q, 2)) {
+                    $day5_count++;
+                    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+                    $wpdb->update(
+                        $sub_table,
+                        ['drip_level' => 2, 'drip_last_sent' => $now],
+                        ['id' => $q->id],
+                        ['%d', '%s'],
+                        ['%d']
+                    );
+                    self::log_activity($q->id, 'drip_followup_2', 'Automated Day 5 Urgency & Expiration email sent to customer.');
+                }
+            }
+        }
+
+        // 3. Expiry Reminders (3 days prior to expiration)
+        $three_days_later = gmdate('Y-m-d H:i:s', strtotime('+3 days'));
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         $expiring_quotes = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$wpdb->prefix}eq_quote_submissions WHERE status = %s AND token_expiry IS NOT NULL AND token_expiry > %s AND token_expiry <= %s",
+            "SELECT * FROM {$sub_table} WHERE status = %s AND token_expiry IS NOT NULL AND token_expiry > %s AND token_expiry <= %s",
             'quoted',
             $now,
             $three_days_later
@@ -322,11 +414,137 @@ class Evonee_Quote_Ajax {
             }
         }
 
+        // 4. Token Expiry Cleanup
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         $wpdb->query($wpdb->prepare(
-            "UPDATE {$wpdb->prefix}eq_quote_submissions SET acceptance_token = '', token_expiry = NULL WHERE token_expiry IS NOT NULL AND token_expiry <= %s",
+            "UPDATE {$sub_table} SET acceptance_token = '', token_expiry = NULL WHERE token_expiry IS NOT NULL AND token_expiry <= %s",
             $now
         ));
+
+        return [
+            'day2_count' => $day2_count,
+            'day5_count' => $day5_count
+        ];
+    }
+
+    /**
+     * AJAX Action: 1-Click Manual Execution of Automated Drip Engine
+     */
+    public function handle_run_drip_engine() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Unauthorized action.'], 403);
+        }
+        if (!check_ajax_referer('eq_admin_nonce', 'nonce', false) && !check_ajax_referer('eq_run_drip_nonce', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Security check failed.'], 403);
+        }
+
+        $res = self::run_daily_quote_cron();
+        wp_send_json_success([
+            'message'    => sprintf('Drip Engine executed! Sent %d Day-2 check-in emails & %d Day-5 urgency emails.', $res['day2_count'], $res['day5_count']),
+            'day2_count' => $res['day2_count'],
+            'day5_count' => $res['day5_count']
+        ]);
+    }
+
+    /**
+     * AJAX Action: 🤖 AI Smart Reply Drafter
+     */
+    public function handle_ai_generate_reply() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Unauthorized.'], 403);
+        }
+        if (!check_ajax_referer('eq_admin_nonce', 'nonce', false) && !check_ajax_referer('eq_ai_generate_reply_nonce', 'nonce', false)) {
+            wp_send_json_error(['message' => 'Security check failed.'], 403);
+        }
+
+        $submission_id = isset($_POST['submission_id']) ? intval($_POST['submission_id']) : 0;
+        if (!$submission_id) {
+            wp_send_json_error(['message' => 'Invalid submission ID.']);
+        }
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'eq_quote_submissions';
+        self::maybe_run_phase2_migrations();
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $quote = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table_name} WHERE id = %d", $submission_id));
+        if (!$quote) {
+            wp_send_json_error(['message' => 'Quote submission not found.']);
+        }
+
+        $settings   = Evonee_Quote_Admin::get_settings();
+        $brand_name = !empty($settings['email_brand_name']) ? $settings['email_brand_name'] : get_bloginfo('name');
+        $currency   = isset($settings['currency_symbol']) ? $settings['currency_symbol'] : '$';
+
+        $qty = intval($quote->quantity);
+        if ($qty <= 0) $qty = 100;
+
+        $price = floatval($quote->quoted_price);
+        if ($price <= 0) {
+            $price = floatval($quote->estimated_total);
+        }
+        if ($price <= 0) {
+            // Intelligent volume pricing estimation fallback
+            $base_unit_price = 4.50;
+            if ($qty >= 500) $base_unit_price = 2.80;
+            elseif ($qty >= 250) $base_unit_price = 3.20;
+            elseif ($qty >= 100) $base_unit_price = 3.80;
+            $price = round($qty * $base_unit_price, 2);
+        }
+
+        $unit_price = round($price / $qty, 2);
+
+        $deposit_percent = !empty($quote->deposit_percent) ? floatval($quote->deposit_percent) : 20;
+        $deposit_amount  = round($price * ($deposit_percent / 100), 2);
+
+        $timeframe = !empty($quote->timeframe) ? $quote->timeframe : 'Standard (5-7 business days)';
+        $specs     = self::format_product_details_text($quote->product_details ?? '');
+
+        $subject = sprintf('Official Custom Quote & Digital Proof Request #%d — %s', $quote->id, $quote->product);
+
+        $body  = "Dear " . esc_html($quote->full_name) . ",\n\n";
+        if (!empty($quote->company)) {
+            $body .= "Thank you for reaching out on behalf of " . esc_html($quote->company) . "! ";
+        } else {
+            $body .= "Thank you for contacting " . esc_html($brand_name) . "! ";
+        }
+        $body .= "We are pleased to provide your custom quotation for " . esc_html($quote->product) . ".\n\n";
+
+        $body .= "📋 QUOTATION SUMMARY & SPECIFICATIONS:\n";
+        $body .= "----------------------------------------\n";
+        $body .= "• Item: " . esc_html($quote->product) . "\n";
+        $body .= "• Quantity: " . number_format($qty) . " units\n";
+        if (!empty($specs)) {
+            $body .= "• Specifications: " . esc_html($specs) . "\n";
+        }
+        $body .= "• Estimated Production & Delivery: " . esc_html($timeframe) . "\n\n";
+
+        $body .= "💰 PRICING & PAYMENT TERMS:\n";
+        $body .= "----------------------------------------\n";
+        $body .= "• Unit Price: " . $currency . number_format($unit_price, 2) . " / unit\n";
+        $body .= "• Total Quoted Amount: " . $currency . number_format($price, 2) . "\n";
+        if ($deposit_percent > 0) {
+            $body .= "• Advance Deposit Required (" . $deposit_percent . "%): " . $currency . number_format($deposit_amount, 2) . "\n";
+            $body .= "• Balance Due (" . (100 - $deposit_percent) . "%): " . $currency . number_format($price - $deposit_amount, 2) . " (Before final shipment)\n";
+        }
+        $body .= "\n";
+
+        $body .= "✨ WHAT'S INCLUDED IN YOUR QUOTE:\n";
+        $body .= "• Complimentary Digital Art Proofing & Pre-production Preview\n";
+        $body .= "• Dedicated Account Representative Support\n";
+        $body .= "• Strict B2B Quality Guarantee\n\n";
+
+        $body .= "To confirm this quote and proceed with digital artwork proofing, simply click the official proposal link in your email or reply directly to this message.\n\n";
+        $body .= "Best regards,\n";
+        $body .= esc_html($brand_name) . " B2B Sales Team\n";
+
+        wp_send_json_success([
+            'reply_subject'           => $subject,
+            'reply_body'              => $body,
+            'suggested_price'         => number_format($price, 2, '.', ''),
+            'suggested_deposit_percent'=> $deposit_percent,
+            'suggested_deposit_amount' => number_format($deposit_amount, 2, '.', '')
+        ]);
     }
 
     /**
@@ -510,6 +728,32 @@ class Evonee_Quote_Ajax {
         if (empty($has_sig)) {
             // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
             $wpdb->query("ALTER TABLE {$wpdb->prefix}eq_quote_submissions ADD COLUMN digital_signature LONGTEXT DEFAULT NULL AFTER token_expiry;");
+        }
+
+        // Advanced AI & Automation Columns
+        $has_drip_level = $wpdb->get_results($wpdb->prepare("SHOW COLUMNS FROM {$wpdb->prefix}eq_quote_submissions LIKE %s", 'drip_level'));
+        if (empty($has_drip_level)) {
+            $wpdb->query("ALTER TABLE {$wpdb->prefix}eq_quote_submissions ADD COLUMN drip_level INT DEFAULT 0 AFTER token_expiry;");
+        }
+
+        $has_drip_sent = $wpdb->get_results($wpdb->prepare("SHOW COLUMNS FROM {$wpdb->prefix}eq_quote_submissions LIKE %s", 'drip_last_sent'));
+        if (empty($has_drip_sent)) {
+            $wpdb->query("ALTER TABLE {$wpdb->prefix}eq_quote_submissions ADD COLUMN drip_last_sent DATETIME DEFAULT NULL AFTER drip_level;");
+        }
+
+        $has_dep_pct = $wpdb->get_results($wpdb->prepare("SHOW COLUMNS FROM {$wpdb->prefix}eq_quote_submissions LIKE %s", 'deposit_percent'));
+        if (empty($has_dep_pct)) {
+            $wpdb->query("ALTER TABLE {$wpdb->prefix}eq_quote_submissions ADD COLUMN deposit_percent DECIMAL(5,2) DEFAULT '0.00' AFTER quoted_price;");
+        }
+
+        $has_dep_amt = $wpdb->get_results($wpdb->prepare("SHOW COLUMNS FROM {$wpdb->prefix}eq_quote_submissions LIKE %s", 'deposit_amount'));
+        if (empty($has_dep_amt)) {
+            $wpdb->query("ALTER TABLE {$wpdb->prefix}eq_quote_submissions ADD COLUMN deposit_amount DECIMAL(10,2) DEFAULT '0.00' AFTER deposit_percent;");
+        }
+
+        $has_resp_time = $wpdb->get_results($wpdb->prepare("SHOW COLUMNS FROM {$wpdb->prefix}eq_quote_submissions LIKE %s", 'response_time_seconds'));
+        if (empty($has_resp_time)) {
+            $wpdb->query("ALTER TABLE {$wpdb->prefix}eq_quote_submissions ADD COLUMN response_time_seconds INT DEFAULT NULL AFTER drip_last_sent;");
         }
 
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter
