@@ -3358,8 +3358,8 @@ class Evonee_Quote_Admin {
                                     </label>
                                 </div>
 
-                                <div class="evonee-setting-row" style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; padding:16px; margin:12px 0;">
-                                    <div class="evonee-setting-info" style="width:100%;">
+                                <div class="evonee-setting-row" style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; padding:16px; margin:12px 0; display:flex; align-items:flex-start; justify-content:space-between;">
+                                    <div class="evonee-setting-info" style="flex:1;">
                                         <strong style="color:#15803d; font-size:14px;">💬 Floating WhatsApp Quick Chat Button (ON / OFF)</strong>
                                         <p style="color:#166534; font-size:12px; margin-top:2px;">Displays a floating WhatsApp button on every page for instant customer chat inquiries.</p>
                                         <div style="margin-top:10px; display:grid; grid-template-columns:1fr 1.5fr 1fr; gap:12px; max-width:750px;">
@@ -3380,10 +3380,12 @@ class Evonee_Quote_Admin {
                                             </div>
                                         </div>
                                     </div>
-                                    <label class="evonee-toggle" style="margin-left:16px;">
+                                    <label class="evonee-toggle" style="margin-left:16px; margin-top:4px;">
                                         <input type="checkbox" name="enable_whatsapp_float" value="1" <?php checked($settings['enable_whatsapp_float'] ?? '1', '1'); ?>>
                                         <span class="evonee-slider"></span>
                                     </label>
+                                </div>
+
                                 <div class="evonee-setting-row" style="background:#faf5ff; border:1px solid #e9d5ff; border-radius:10px; padding:16px; margin:12px 0;">
                                     <div class="evonee-setting-info">
                                         <strong style="color:#6d28d9; font-size:14px;">🛒 RFQ Dynamic Quote Basket & Side Drawer (ON / OFF)</strong>
