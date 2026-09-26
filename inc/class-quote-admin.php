@@ -114,6 +114,10 @@ class Evonee_Quote_Admin {
             'enable_wc_auto'           => '1',
             'enable_global_floating_btn' => '1',
             'global_floating_btn_text'   => '💬 Request Free Quote',
+            'enable_whatsapp_float'      => '1',
+            'whatsapp_number'            => '8801819898893',
+            'whatsapp_default_msg'       => 'Hi Evonee Team! I have a question about a custom quote.',
+            'whatsapp_float_position'    => 'bottom-right',
             'enable_deposit_payment'   => '0',
             'deposit_percentage'       => '50',
             'show_field_company'       => '1',
@@ -3118,6 +3122,10 @@ class Evonee_Quote_Admin {
                 'enable_wc_auto'           => isset($_POST['enable_wc_auto']) ? '1' : '0',
                 'enable_global_floating_btn' => isset($_POST['enable_global_floating_btn']) ? '1' : '0',
                 'global_floating_btn_text'   => sanitize_text_field(wp_unslash($_POST['global_floating_btn_text'] ?? '💬 Request Free Quote')),
+                'enable_whatsapp_float'      => isset($_POST['enable_whatsapp_float']) ? '1' : '0',
+                'whatsapp_number'            => sanitize_text_field(wp_unslash($_POST['whatsapp_number'] ?? '8801819898893')),
+                'whatsapp_default_msg'       => sanitize_text_field(wp_unslash($_POST['whatsapp_default_msg'] ?? 'Hi Evonee Team! I have a question about a custom quote.')),
+                'whatsapp_float_position'    => sanitize_text_field(wp_unslash($_POST['whatsapp_float_position'] ?? 'bottom-right')),
                 'show_field_company'       => isset($_POST['show_field_company']) ? '1' : '0',
                 'show_field_text_specs'    => isset($_POST['show_field_text_specs']) ? '1' : '0',
                 'show_field_specific_date' => isset($_POST['show_field_specific_date']) ? '1' : '0',
@@ -3340,6 +3348,34 @@ class Evonee_Quote_Admin {
                                     </div>
                                     <label class="evonee-toggle">
                                         <input type="checkbox" name="enable_global_floating_btn" value="1" <?php checked($settings['enable_global_floating_btn'] ?? '1', '1'); ?>>
+                                        <span class="evonee-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div class="evonee-setting-row" style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; padding:16px; margin:12px 0;">
+                                    <div class="evonee-setting-info" style="width:100%;">
+                                        <strong style="color:#15803d; font-size:14px;">💬 Floating WhatsApp Quick Chat Button (ON / OFF)</strong>
+                                        <p style="color:#166534; font-size:12px; margin-top:2px;">Displays a floating WhatsApp button on every page for instant customer chat inquiries.</p>
+                                        <div style="margin-top:10px; display:grid; grid-template-columns:1fr 1.5fr 1fr; gap:12px; max-width:750px;">
+                                            <div>
+                                                <label style="font-size:11.5px; font-weight:700; color:#334155; display:block; margin-bottom:4px;">WhatsApp Number (with Country Code):</label>
+                                                <input type="text" name="whatsapp_number" value="<?php echo esc_attr($settings['whatsapp_number'] ?? '8801819898893'); ?>" placeholder="e.g. 8801819898893" style="font-size:12px; padding:6px 10px; width:100%; border:1px solid #cbd5e1; border-radius:6px; background:#ffffff;">
+                                            </div>
+                                            <div>
+                                                <label style="font-size:11.5px; font-weight:700; color:#334155; display:block; margin-bottom:4px;">Default Greeting Text:</label>
+                                                <input type="text" name="whatsapp_default_msg" value="<?php echo esc_attr($settings['whatsapp_default_msg'] ?? 'Hi Evonee Team! I have a question about a custom quote.'); ?>" placeholder="Default chat greeting" style="font-size:12px; padding:6px 10px; width:100%; border:1px solid #cbd5e1; border-radius:6px; background:#ffffff;">
+                                            </div>
+                                            <div>
+                                                <label style="font-size:11.5px; font-weight:700; color:#334155; display:block; margin-bottom:4px;">Button Screen Position:</label>
+                                                <select name="whatsapp_float_position" style="font-size:12px; padding:6px 10px; width:100%; border:1px solid #cbd5e1; border-radius:6px; background:#ffffff;">
+                                                    <option value="bottom-right" <?php selected($settings['whatsapp_float_position'] ?? 'bottom-right', 'bottom-right'); ?>>Bottom Right</option>
+                                                    <option value="bottom-left" <?php selected($settings['whatsapp_float_position'] ?? 'bottom-right', 'bottom-left'); ?>>Bottom Left</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <label class="evonee-toggle" style="margin-left:16px;">
+                                        <input type="checkbox" name="enable_whatsapp_float" value="1" <?php checked($settings['enable_whatsapp_float'] ?? '1', '1'); ?>>
                                         <span class="evonee-slider"></span>
                                     </label>
                                 </div>
