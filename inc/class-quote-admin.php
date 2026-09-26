@@ -163,6 +163,8 @@ class Evonee_Quote_Admin {
             'wc_hide_price'            => '0',
             'enable_cart_quote'        => '0',
             'products_grid_limit'      => '12',
+            'product_grid_orderby'     => 'date',
+            'product_grid_order'       => 'DESC',
             'show_products_title'      => '0',
             // Product Grid Card Brand Colors
             'card_accent_color'        => '#6d28d9',
@@ -3169,6 +3171,8 @@ class Evonee_Quote_Admin {
                 'email_brand_name'         => sanitize_text_field(wp_unslash($_POST['email_brand_name'] ?? '')),
                 'email_footer_text'        => sanitize_text_field(wp_unslash($_POST['email_footer_text'] ?? '')),
                 'products_grid_limit'      => max(0, intval($_POST['products_grid_limit'] ?? 12)),
+                'product_grid_orderby'     => sanitize_text_field(wp_unslash($_POST['product_grid_orderby'] ?? 'date')),
+                'product_grid_order'       => sanitize_text_field(wp_unslash($_POST['product_grid_order'] ?? 'DESC')),
                 'show_products_title'      => isset($_POST['show_products_title']) ? '1' : '0',
                 'card_accent_color'        => sanitize_hex_color(wp_unslash($_POST['card_accent_color'] ?? '')) ?: '#6d28d9',
                 'card_border_hover_color'  => sanitize_hex_color(wp_unslash($_POST['card_border_hover_color'] ?? '')) ?: '#a78bfa',
@@ -3599,16 +3603,36 @@ class Evonee_Quote_Admin {
                                     </div>
                                 </div>
 
-                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+                                <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:16px; margin-bottom:16px;">
                                     <div>
                                         <label style="font-weight:700; display:block; margin-bottom:6px;">Number of Decimals:</label>
                                         <input type="number" name="decimals" value="<?php echo esc_attr($settings['decimals'] ?? 2); ?>" min="0" max="4" style="width:70px;">
-                                        <p class="description">Set to 0 for currencies without cents/decimals (e.g. JPY, KRW).</p>
+                                        <p class="description">For non-decimal currencies (JPY, KRW).</p>
                                     </div>
                                     <div>
-                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Product Grid — Items to Display:</label>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Grid — Items to Display:</label>
                                         <input type="number" name="products_grid_limit" value="<?php echo esc_attr($settings['products_grid_limit']); ?>" min="0" max="100" style="width:80px;" required>
-                                        <p class="description">How many products to show in <code>[evonee_products]</code>.</p>
+                                        <p class="description">Products count in <code>[evonee_products]</code>.</p>
+                                    </div>
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Default Order By:</label>
+                                        <select name="product_grid_orderby" style="width:100%;">
+                                            <option value="date" <?php selected($settings['product_grid_orderby'] ?? 'date', 'date'); ?>>Date Created (Default)</option>
+                                            <option value="menu_order" <?php selected($settings['product_grid_orderby'] ?? '', 'menu_order'); ?>>Menu Order (Custom Admin Order)</option>
+                                            <option value="title" <?php selected($settings['product_grid_orderby'] ?? '', 'title'); ?>>Product Title (A-Z)</option>
+                                            <option value="price" <?php selected($settings['product_grid_orderby'] ?? '', 'price'); ?>>Product Price</option>
+                                            <option value="popularity" <?php selected($settings['product_grid_orderby'] ?? '', 'popularity'); ?>>Popularity (Top Sales)</option>
+                                            <option value="rand" <?php selected($settings['product_grid_orderby'] ?? '', 'rand'); ?>>Random Shuffle</option>
+                                        </select>
+                                        <p class="description">WooCommerce query order parameter.</p>
+                                    </div>
+                                    <div>
+                                        <label style="font-weight:700; display:block; margin-bottom:6px;">Order Direction:</label>
+                                        <select name="product_grid_order" style="width:100%;">
+                                            <option value="DESC" <?php selected(strtoupper($settings['product_grid_order'] ?? 'DESC'), 'DESC'); ?>>Descending (High to Low / Newest First)</option>
+                                            <option value="ASC" <?php selected(strtoupper($settings['product_grid_order'] ?? ''), 'ASC'); ?>>Ascending (Low to High / Oldest First)</option>
+                                        </select>
+                                        <p class="description">Sorting direction (ASC/DESC).</p>
                                     </div>
                                 </div>
 

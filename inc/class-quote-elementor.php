@@ -156,6 +156,67 @@ class Evonee_Elementor_Quote_Button_Widget extends \Elementor\Widget_Base {
 
             $this->end_controls_section();
 
+            // Query & Sorting Section
+            $this->start_controls_section(
+                'query_section',
+                [
+                    'label' => __('Query & Sorting Options', 'evonee'),
+                    'tab'   => \Elementor\Controls_Manager::TAB_CONTENT,
+                ]
+            );
+
+            $this->add_control(
+                'orderby',
+                [
+                    'label'   => __('Order By Parameter', 'evonee'),
+                    'type'    => \Elementor\Controls_Manager::SELECT,
+                    'default' => 'date',
+                    'options' => [
+                        'date'       => __('1. Date Created (Default)', 'evonee'),
+                        'menu_order' => __('2. Menu Order (Custom Admin Order)', 'evonee'),
+                        'title'      => __('3. Product Title (A-Z / Z-A)', 'evonee'),
+                        'price'      => __('4. Product Price', 'evonee'),
+                        'popularity' => __('5. Popularity (Top Sales)', 'evonee'),
+                        'rand'       => __('6. Random Shuffle', 'evonee'),
+                    ],
+                ]
+            );
+
+            $this->add_control(
+                'order',
+                [
+                    'label'   => __('Order Direction', 'evonee'),
+                    'type'    => \Elementor\Controls_Manager::SELECT,
+                    'default' => 'DESC',
+                    'options' => [
+                        'DESC' => __('Descending (High to Low / Newest First)', 'evonee'),
+                        'ASC'  => __('Ascending (Low to High / Oldest First)', 'evonee'),
+                    ],
+                ]
+            );
+
+            $this->add_control(
+                'category',
+                [
+                    'label'       => __('Category Slugs (Optional)', 'evonee'),
+                    'type'        => \Elementor\Controls_Manager::TEXT,
+                    'default'     => '',
+                    'placeholder' => __('e.g. clothing, accessories', 'evonee'),
+                ]
+            );
+
+            $this->add_control(
+                'include_ids',
+                [
+                    'label'       => __('Specific Product IDs (Optional)', 'evonee'),
+                    'type'        => \Elementor\Controls_Manager::TEXT,
+                    'default'     => '',
+                    'placeholder' => __('e.g. 102, 105, 88', 'evonee'),
+                ]
+            );
+
+            $this->end_controls_section();
+
             // Style Tab Controls (Brand Color Customizer)
             $this->start_controls_section(
                 'style_section',
@@ -274,12 +335,20 @@ class Evonee_Elementor_Quote_Button_Widget extends \Elementor\Widget_Base {
             $cols       = !empty($settings['columns']) ? intval($settings['columns']) : 6;
             $badge      = !empty($settings['badge']) ? $settings['badge'] : '';
             $show_price = !empty($settings['show_price']) ? '1' : '0';
+            $orderby    = !empty($settings['orderby']) ? $settings['orderby'] : '';
+            $order      = !empty($settings['order']) ? $settings['order'] : '';
+            $category   = !empty($settings['category']) ? $settings['category'] : '';
+            $include    = !empty($settings['include_ids']) ? $settings['include_ids'] : '';
 
             echo Evonee_Quote_Modal::render_products_grid([
                 'card_style' => $card_style,
                 'cols'       => $cols,
                 'badge'      => $badge,
                 'show_price' => $show_price,
+                'orderby'    => $orderby,
+                'order'      => $order,
+                'category'   => $category,
+                'include'    => $include,
             ]);
         }
     }

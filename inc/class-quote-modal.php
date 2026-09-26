@@ -142,15 +142,41 @@ class Evonee_Quote_Modal {
      * 1. Fetches real WooCommerce products if WooCommerce is installed
      * 2. Otherwise returns filterable default list with safe fallback SVG images
      */
-    public static function get_products($limit = -1) {
+    public static function get_products($limit = -1, $orderby = '', $order = '', $category = '', $include = '') {
         $query_limit = ($limit > 0) ? $limit : -1;
+        $settings = Evonee_Quote_Admin::get_settings();
+
+        if (empty($orderby)) {
+            $orderby = !empty($settings['product_grid_orderby']) ? $settings['product_grid_orderby'] : 'date';
+        }
+        if (empty($order)) {
+            $order = !empty($settings['product_grid_order']) ? strtoupper($settings['product_grid_order']) : 'DESC';
+        }
 
         // Fetch from WooCommerce if active
         if (class_exists('WooCommerce')) {
-            $wc_products = wc_get_products([
-                'status' => 'publish',
-                'limit'  => $query_limit,
-            ]);
+            $query_args = [
+                'status'  => 'publish',
+                'limit'   => $query_limit,
+                'orderby' => $orderby,
+                'order'   => strtoupper($order),
+            ];
+
+            if (!empty($category)) {
+                $query_args['category'] = array_map('trim', explode(',', $category));
+            }
+
+            if (!empty($include)) {
+                $include_ids = array_filter(array_map('intval', explode(',', $include)));
+                if (!empty($include_ids)) {
+                    $query_args['include'] = $include_ids;
+                    if ($orderby === 'include' || $orderby === 'post__in') {
+                        $query_args['orderby'] = 'include';
+                    }
+                }
+            }
+
+            $wc_products = wc_get_products($query_args);
             if (!empty($wc_products)) {
                 $list = [];
                 foreach ($wc_products as $p) {
@@ -1199,6 +1225,10 @@ class Evonee_Quote_Modal {
             'card_style'  => '',
             'badge'       => '',
             'show_price'  => '',
+            'orderby'     => '',
+            'order'       => '',
+            'category'    => '',
+            'include'     => '',
         ], $atts);
 
         // Allow 'columns' or 'cols'
@@ -1225,7 +1255,12 @@ class Evonee_Quote_Modal {
             $limit = intval($settings['products_grid_limit'] ?? 12);
         }
 
-        $products = self::get_products($limit);
+        $orderby  = !empty($atts['orderby']) ? sanitize_text_field($atts['orderby']) : '';
+        $order    = !empty($atts['order']) ? sanitize_text_field($atts['order']) : '';
+        $category = !empty($atts['category']) ? sanitize_text_field($atts['category']) : '';
+        $include  = !empty($atts['include']) ? sanitize_text_field($atts['include']) : '';
+
+        $products = self::get_products($limit, $orderby, $order, $category, $include);
 
         // Limit product count if specified (covers default product list)
         if ($limit > 0 && count($products) > $limit) {
