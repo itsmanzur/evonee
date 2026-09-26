@@ -114,6 +114,7 @@ class Evonee_Quote_Admin {
             'enable_wc_auto'           => '1',
             'enable_global_floating_btn' => '1',
             'global_floating_btn_text'   => '💬 Request Free Quote',
+            'enable_rfq_basket'          => '1',
             'enable_whatsapp_float'      => '1',
             'whatsapp_number'            => '8801819898893',
             'whatsapp_default_msg'       => 'Hi Evonee Team! I have a question about a custom quote.',
@@ -3122,6 +3123,7 @@ class Evonee_Quote_Admin {
                 'enable_wc_auto'           => isset($_POST['enable_wc_auto']) ? '1' : '0',
                 'enable_global_floating_btn' => isset($_POST['enable_global_floating_btn']) ? '1' : '0',
                 'global_floating_btn_text'   => sanitize_text_field(wp_unslash($_POST['global_floating_btn_text'] ?? '💬 Request Free Quote')),
+                'enable_rfq_basket'          => isset($_POST['enable_rfq_basket']) ? '1' : '0',
                 'enable_whatsapp_float'      => isset($_POST['enable_whatsapp_float']) ? '1' : '0',
                 'whatsapp_number'            => sanitize_text_field(wp_unslash($_POST['whatsapp_number'] ?? '8801819898893')),
                 'whatsapp_default_msg'       => sanitize_text_field(wp_unslash($_POST['whatsapp_default_msg'] ?? 'Hi Evonee Team! I have a question about a custom quote.')),
@@ -3376,6 +3378,15 @@ class Evonee_Quote_Admin {
                                     </div>
                                     <label class="evonee-toggle" style="margin-left:16px;">
                                         <input type="checkbox" name="enable_whatsapp_float" value="1" <?php checked($settings['enable_whatsapp_float'] ?? '1', '1'); ?>>
+                                        <span class="evonee-slider"></span>
+                                    </label>
+                                <div class="evonee-setting-row" style="background:#faf5ff; border:1px solid #e9d5ff; border-radius:10px; padding:16px; margin:12px 0;">
+                                    <div class="evonee-setting-info">
+                                        <strong style="color:#6d28d9; font-size:14px;">🛒 RFQ Dynamic Quote Basket & Side Drawer (ON / OFF)</strong>
+                                        <p style="color:#5b21b6; font-size:12px; margin-top:2px;">Displays the floating "Quote Basket" button and slide-out side drawer for customers to collect multiple items and request bulk quotes.</p>
+                                    </div>
+                                    <label class="evonee-toggle">
+                                        <input type="checkbox" name="enable_rfq_basket" value="1" <?php checked($settings['enable_rfq_basket'] ?? '1', '1'); ?>>
                                         <span class="evonee-slider"></span>
                                     </label>
                                 </div>
